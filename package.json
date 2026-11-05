@@ -1,0 +1,50 @@
+{
+  "name": "@local/dsh-netease-music",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "在 DSH 左侧栏集成网易云音乐：搜索、榜单、歌单、播放器与自动登录",
+  "author": "LessXi",
+  "license": "MIT",
+  "homepage": "https://github.com/LessXi/dsh-netease-music#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LessXi/dsh-netease-music.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LessXi/dsh-netease-music/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "netease",
+    "netease-cloud-music",
+    "music",
+    "player"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "qr.js",
+    "login-assistant.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  }
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="网易云音乐">
+  <rect width="128" height="128" rx="28" fill="#C20C0C"/>
+  <path d="M34 82c-9 0-16-7-16-15.6 0-8.3 6.6-15.2 15-15.6 1.9-12.3 12.6-21.8 25.4-21.8 12.9 0 23.7 9.7 25.4 22.2 7.6 1.6 13.2 8.3 13.2 16.3 0 9.1-7.4 16.5-16.6 16.5" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M78 46v30" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="70" cy="78" r="9" fill="#fff"/>
+  <path d="M78 46c7 1.6 12 5.6 15 11" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+</svg>

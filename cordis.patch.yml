@@ -1,0 +1,3 @@
+- insert:
+    - id: netease-music
+      name: '@local/dsh-netease-music'
