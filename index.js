@@ -275,6 +275,40 @@ const ALLOWED_APIS = {
     },
     payload: () => ({}),
   },
+  personalFm: {
+    // 私人FM（每日推荐电台），需要登录
+    method: 'POST',
+    path: '/weapi/v1/radio/get',
+    payload: () => ({}),
+  },
+  fmDislike: {
+    // 私人FM「不感兴趣」，需要登录
+    method: 'POST',
+    path: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌曲 id 不合法');
+      return '/weapi/v1/radio/trash/' + id;
+    },
+    payload: () => ({}),
+  },
+  dailyRecommend: {
+    // 每日推荐（需要登录）
+    method: 'POST',
+    path: '/weapi/v1/discovery/recommend/songs',
+    payload: () => ({}),
+  },
+  playRecord: {
+    // 听歌排行（需要登录），type=1 本周、0 所有时间
+    method: 'POST',
+    path: '/weapi/v1/play/record',
+    payload: (p) => ({ uid: normalizeId(p.uid), type: p.type === 'all' ? 0 : 1 }),
+  },
+  likeSongs: {
+    // 我喜欢的音乐：先拿账号信息里的 userId，再拉喜欢列表（由 client 组合），这里提供 id 列表
+    method: 'POST',
+    path: '/weapi/song/like/get',
+    payload: (p) => ({ uid: normalizeId(p.uid) }),
+  },
 };
 
 function clampInt(value, min, max, fallback) {

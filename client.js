@@ -99,6 +99,14 @@ window.__ModuleLoader__.load({
       released: '发行',
       artistAlbums: '张专辑',
       artistSongs: '首单曲',
+      navDaily: '每日推荐',
+      refresh: '刷新',
+      navRadio: '私人FM',
+      dailyHint: '每天根据你的口味更新',
+      radioHint: '根据你的口味随机推荐，不喜欢就换一批',
+      radioRefresh: '换一批',
+      radioEmpty: '暂时没有推荐，稍后再试',
+      loginRequired: '登录后可以查看每日推荐和私人FM',
     };
 
     const en = {
@@ -185,6 +193,14 @@ window.__ModuleLoader__.load({
       released: 'Released',
       artistAlbums: 'albums',
       artistSongs: 'songs',
+      navDaily: 'Daily mix',
+      refresh: 'Refresh',
+      navRadio: 'Private FM',
+      dailyHint: 'Updated daily for your taste',
+      radioHint: 'Random picks from your taste — refresh if you dislike them',
+      radioRefresh: 'Refresh',
+      radioEmpty: 'No recommendations yet, try again later',
+      loginRequired: 'Sign in to see daily picks and private FM',
     };
 
     // ---------- 样式 ----------
@@ -792,6 +808,8 @@ window.__ModuleLoader__.load({
     const IconHeart = ({ size = 14 }) => svgIcon(size, 'M12 21s-7.5-4.7-9.3-9A5.2 5.2 0 0112 6.4 5.2 5.2 0 0121.3 12c-1.8 4.3-9.3 9-9.3 9z');
     const IconRefresh = ({ size = 14 }) => svgIcon(size, 'M12 5V2L7 6l5 4V7a5 5 0 11-5 5H5a7 7 0 107-7z');
     const IconMusic = ({ size = 14 }) => svgIcon(size, 'M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zM19 16a3 3 0 11-3-3 3 3 0 013 3z');
+    const IconRadio = ({ size = 14 }) => svgIcon(size, 'M12 3a9 9 0 100 18 9 9 0 000-18zm0 3a6 6 0 110 12 6 6 0 010-12zm0 3a3 3 0 100 6 3 3 0 000-6z');
+    const IconDaily = ({ size = 14 }) => svgIcon(size, 'M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z');
     const IconLyric = ({ size = 15 }) =>
       svgIcon(size, null, {
         fill: 'none',
@@ -1609,6 +1627,147 @@ window.__ModuleLoader__.load({
     }
 
     // ---------- 视图：我的音乐 ----------
+
+    // ---------- 视图：每日推荐 / 私人FM ----------
+
+    function LoginRequired({ t, onLogin }) {
+      return h(
+        'div',
+        { className: 'dnm-empty' },
+        h('p', null, t('loginRequired')),
+        h('button', { type: 'button', className: 'dnm-btn primary', onClick: onLogin }, h(IconUser, { size: 14 }), t('login')),
+      );
+    }
+
+    function DailyView({ t, onLogin }) {
+      const state = useSession();
+      const daily = useAsync(async () => {
+        if (!state.loggedIn) return [];
+        const data = await rpc('dailyRecommend');
+        return normalizeTracks(data?.data?.dailySongs ?? data?.recommend ?? []);
+      }, [state.loggedIn]);
+      const playerState = usePlayerState();
+      const currentId = playerState.track ? playerState.track.id : null;
+      const tracks = daily.data || [];
+      if (!state.loggedIn) {
+        return h('div', { className: 'dnm-content' }, h('h1', { className: 'dnm-h1' }, t('navDaily')), h(LoginRequired, { t, onLogin }));
+      }
+      return h(
+        'div',
+        { className: 'dnm-content' },
+        h('h1', { className: 'dnm-h1' }, t('navDaily')),
+        h('p', { style: { margin: '0 0 12px', color: 'var(--dsw-alias-label-secondary)', fontSize: 13 } }, t('dailyHint')),
+        h(
+          'div',
+          { className: 'dnm-actions', style: { marginBottom: 14 } },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-btn primary',
+              disabled: tracks.length === 0,
+              onClick: () => sharedPlayer.playQueue(tracks, 0),
+            },
+            h(IconPlay, { size: 14 }),
+            t('playAll'),
+          ),
+          h(
+            'button',
+            { type: 'button', className: 'dnm-btn', disabled: daily.status === 'loading', onClick: daily.reload },
+            h(IconRefresh, { size: 13 }),
+            t('refresh'),
+          ),
+        ),
+        daily.status === 'loading'
+          ? h(Loading, { label: t('loading') })
+          : daily.status === 'error'
+            ? h(ErrorBox, { message: daily.error, onRetry: daily.reload, retryLabel: t('retry') })
+            : tracks.length === 0
+              ? h(Empty, { label: t('dailyHint') })
+              : tracks.map((track, index) =>
+                  h(TrackRow, {
+                    key: track.id + '-' + index,
+                    track,
+                    index,
+                    playing: currentId === track.id,
+                    t,
+                    onPlay: () => sharedPlayer.playQueue(tracks, index),
+                  }),
+                ),
+      );
+    }
+
+    function RadioView({ t, onLogin }) {
+      const state = useSession();
+      const fm = useAsync(async () => {
+        if (!state.loggedIn) return [];
+        // 私人FM 每次只返回 1~3 首，累积几轮凑成一批
+        const collected = [];
+        const seen = new Set();
+        for (let round = 0; round < 3; round += 1) {
+          const data = await rpc('personalFm').catch(() => null);
+          const batch = normalizeTracks(Array.isArray(data?.data) ? data.data : []);
+          if (batch.length === 0) break;
+          for (const track of batch) {
+            if (track.id && !seen.has(track.id)) {
+              seen.add(track.id);
+              collected.push(track);
+            }
+          }
+          if (collected.length >= 6) break;
+        }
+        return collected;
+      }, [state.loggedIn]);
+      const playerState = usePlayerState();
+      const currentId = playerState.track ? playerState.track.id : null;
+      const tracks = fm.data || [];
+      if (!state.loggedIn) {
+        return h('div', { className: 'dnm-content' }, h('h1', { className: 'dnm-h1' }, t('navRadio')), h(LoginRequired, { t, onLogin }));
+      }
+      return h(
+        'div',
+        { className: 'dnm-content' },
+        h('h1', { className: 'dnm-h1' }, t('navRadio')),
+        h('p', { style: { margin: '0 0 12px', color: 'var(--dsw-alias-label-secondary)', fontSize: 13 } }, t('radioHint')),
+        h(
+          'div',
+          { className: 'dnm-actions', style: { marginBottom: 14 } },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-btn primary',
+              disabled: tracks.length === 0,
+              onClick: () => sharedPlayer.playQueue(tracks, 0),
+            },
+            h(IconPlay, { size: 14 }),
+            t('playAll'),
+          ),
+          h(
+            'button',
+            { type: 'button', className: 'dnm-btn', disabled: fm.status === 'loading', onClick: fm.reload },
+            h(IconRefresh, { size: 13 }),
+            t('radioRefresh'),
+          ),
+        ),
+        fm.status === 'loading'
+          ? h(Loading, { label: t('loading') })
+          : fm.status === 'error'
+            ? h(ErrorBox, { message: fm.error, onRetry: fm.reload, retryLabel: t('retry') })
+            : tracks.length === 0
+              ? h(Empty, { label: t('radioEmpty') })
+              : tracks.map((track, index) =>
+                  h(TrackRow, {
+                    key: track.id + '-' + index,
+                    track,
+                    index,
+                    playing: currentId === track.id,
+                    t,
+                    onPlay: () => sharedPlayer.playQueue(tracks, index),
+                  }),
+                ),
+      );
+    }
 
     function MineView({ t, onOpenPlaylist, onLogin }) {
       const state = useSession();
@@ -2548,6 +2707,8 @@ window.__ModuleLoader__.load({
 
       const navItems = [
         { key: 'discover', label: t('tabDiscover'), icon: h(IconMusic, { size: 15 }) },
+        { key: 'daily', label: t('navDaily'), icon: h(IconDaily, { size: 15 }) },
+        { key: 'radio', label: t('navRadio'), icon: h(IconRadio, { size: 15 }) },
         { key: 'toplist', label: t('tabToplist'), icon: h(IconRefresh, { size: 15 }) },
         { key: 'mine', label: t('tabMine'), icon: h(IconUser, { size: 15 }) },
       ];
@@ -2555,6 +2716,10 @@ window.__ModuleLoader__.load({
       let content;
       if (view === 'playlist' && playlistId) {
         content = h(PlaylistView, { t, playlistId, onBack: () => setView('discover') });
+      } else if (view === 'daily') {
+        content = h(DailyView, { t, onLogin: () => setLoginOpen(true) });
+      } else if (view === 'radio') {
+        content = h(RadioView, { t, onLogin: () => setLoginOpen(true) });
       } else if (view === 'toplist') {
         content = h(ToplistView, { t, onOpenPlaylist: openPlaylist });
       } else if (view === 'search') {
