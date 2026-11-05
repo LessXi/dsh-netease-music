@@ -107,6 +107,15 @@ window.__ModuleLoader__.load({
       radioRefresh: '换一批',
       radioEmpty: '暂时没有推荐，稍后再试',
       loginRequired: '登录后可以查看每日推荐和私人FM',
+      likes: '我喜欢的音乐',
+      like: '喜欢',
+      unlike: '取消喜欢',
+      likeHint: '登录后可以收藏歌曲',
+      likesHint: '在播放条或歌单里点红心，歌曲会收进这里',
+      likesEmpty: '还没有喜欢的歌曲',
+      recent: '最近播放',
+      recentEmpty: '还没有播放记录',
+      clearHistory: '清空记录',
     };
 
     const en = {
@@ -201,6 +210,15 @@ window.__ModuleLoader__.load({
       radioRefresh: 'Refresh',
       radioEmpty: 'No recommendations yet, try again later',
       loginRequired: 'Sign in to see daily picks and private FM',
+      likes: 'Liked songs',
+      like: 'Like',
+      unlike: 'Unlike',
+      likeHint: 'Sign in to like songs',
+      likesHint: 'Songs you like will show up here',
+      likesEmpty: 'No liked songs yet',
+      recent: 'Recently played',
+      recentEmpty: 'Nothing played yet',
+      clearHistory: 'Clear history',
     };
 
     // ---------- 样式 ----------
@@ -359,7 +377,18 @@ window.__ModuleLoader__.load({
 .dnm-album-cover{width:180px;height:180px;border-radius:12px;object-fit:cover;flex:0 0 auto;background:var(--dsw-alias-bg-layer-2);box-shadow:0 10px 30px rgba(0,0,0,.22)}
 .dnm-album-title{font-size:24px;font-weight:600;margin:0 0 8px}
 .dnm-album-meta{font-size:13px;color:var(--dsw-alias-label-secondary);margin:0 0 6px}
-@media (max-width:760px){.dnm-np-left{display:none}.dnm-artist-head,.dnm-album-head{flex-direction:column}.dnm-artist-avatar{width:96px;height:96px}.dnm-album-cover{width:130px;height:130px}}
+.dnm-likes-cover{width:180px;height:180px;border-radius:16px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,var(--dsw-alias-bg-layer-2),var(--dsw-alias-bg-layer-1));border:.5px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-brand-primary)}
+.dnm-entry{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:0;border-radius:12px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:14px;cursor:pointer;text-align:left;transition:background .15s}
+.dnm-entry:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dnm-entry-icon{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary);flex:0 0 auto}
+.dnm-entry-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-entry-arrow{color:var(--dsw-alias-label-tertiary);font-size:18px;line-height:1}
+.dnm-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.dnm-section-head .dnm-h2{margin:0}
+.dnm-row-action:disabled,.dnm-icon-btn:disabled{opacity:.35;cursor:default}
+.dnm-row-like.liked{color:var(--dsw-alias-brand-primary)}
+.dnm-player-like.liked{color:var(--dsw-alias-brand-primary)}
+@media (max-width:760px){.dnm-np-left{display:none}.dnm-artist-head,.dnm-album-head{flex-direction:column}.dnm-artist-avatar{width:96px;height:96px}.dnm-album-cover{width:130px;height:130px}.dnm-likes-cover{width:130px;height:130px}}
     `;
 
     function ensureCss() {
@@ -544,6 +573,7 @@ window.__ModuleLoader__.load({
           index = queue.findIndex((item) => item.id === normalized.id);
         }
         patch({ track: normalized, queue, index, loading: true, error: '', currentTime: 0, duration: normalized.duration / 1000 || 0 });
+        historyStore.record(normalized);
         try {
           const data = await rpc('songUrl', { ids: [normalized.id] });
           if (token !== playToken) return;
@@ -684,6 +714,114 @@ window.__ModuleLoader__.load({
       window.__dshNeteasePlayer = player;
       return player;
     })();
+
+    // ---------- 最近播放（本地记录） ----------
+
+    const HISTORY_KEY = 'dsh-netease-music:history';
+    const HISTORY_LIMIT = 100;
+
+    const historyStore = (() => {
+      function read() {
+        try {
+          const raw = window.localStorage.getItem(HISTORY_KEY);
+          if (!raw) return [];
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [];
+          return parsed.map((item) => normalizeTrack(item)).filter(Boolean).slice(0, HISTORY_LIMIT);
+        } catch {
+          return [];
+        }
+      }
+      let items = read();
+      const listeners = new Set();
+      function persist() {
+        try {
+          window.localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+        } catch {
+          /* 存储被禁用或写满时忽略，不影响播放 */
+        }
+      }
+      function emit() {
+        for (const listener of listeners) listener();
+      }
+      function record(track) {
+        const normalized = normalizeTrack(track);
+        if (!normalized) return;
+        items = [normalized, ...items.filter((item) => item.id !== normalized.id)].slice(0, HISTORY_LIMIT);
+        persist();
+        emit();
+      }
+      function clear() {
+        items = [];
+        persist();
+        emit();
+      }
+      return {
+        getSnapshot: () => items,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        record,
+        clear,
+      };
+    })();
+
+    function useHistory() {
+      return useSyncExternalStore(historyStore.subscribe, historyStore.getSnapshot, historyStore.getSnapshot);
+    }
+
+    // ---------- 喜欢的歌曲（登录后从服务端同步） ----------
+
+    const likedStore = (() => {
+      let ids = new Set();
+      let loadingFor = 0;
+      let request = null;
+      const listeners = new Set();
+      function emit() {
+        for (const listener of listeners) listener();
+      }
+      function ensure(uid) {
+        if (!uid) return Promise.resolve();
+        if (loadingFor === uid) return request || Promise.resolve();
+        loadingFor = uid;
+        request = (async () => {
+          try {
+            const data = await rpc('likeSongs', { uid });
+            ids = new Set(Array.isArray(data?.ids) ? data.ids.map(Number) : []);
+            emit();
+          } catch {
+            /* 拿不到喜欢列表时红心保持为空，不影响其它功能 */
+          }
+        })();
+        return request;
+      }
+      async function toggle(id) {
+        const trackId = Number(id);
+        if (!trackId) return null;
+        const like = !ids.has(trackId);
+        await rpc('songLike', { id: trackId, like });
+        const next = new Set(ids);
+        if (like) next.add(trackId);
+        else next.delete(trackId);
+        ids = next;
+        emit();
+        return like;
+      }
+      return {
+        getSnapshot: () => ids,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        ensure,
+        toggle,
+      };
+    })();
+
+    function useLikedIds() {
+      return useSyncExternalStore(likedStore.subscribe, likedStore.getSnapshot, likedStore.getSnapshot);
+    }
 
     function usePlayerState() {
       return useSyncExternalStore(sharedPlayer.subscribe, sharedPlayer.getSnapshot, sharedPlayer.getSnapshot);
@@ -1000,6 +1138,9 @@ window.__ModuleLoader__.load({
 
     function TrackRow({ track, index, playing, onPlay, t }) {
       const isVip = track.fee === 1 || track.fee === 4;
+      const session = useSession();
+      const likedIds = useLikedIds();
+      const liked = likedIds.has(track.id);
       return h(
         'div',
         {
@@ -1026,6 +1167,21 @@ window.__ModuleLoader__.load({
         ),
         h('div', { className: 'dnm-row-album' }, track.album || ''),
         h('div', { className: 'dnm-row-duration' }, formatDuration(track.duration)),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dnm-row-action dnm-row-like' + (liked ? ' liked' : ''),
+            title: session.loggedIn ? (liked ? t('unlike') : t('like')) : t('likeHint'),
+            disabled: !session.loggedIn,
+            onClick: (event) => {
+              event.stopPropagation();
+              if (!session.loggedIn) return;
+              likedStore.toggle(track.id).catch(() => undefined);
+            },
+          },
+          h(IconHeart, { size: 13 }),
+        ),
         h(
           'button',
           {
@@ -1769,7 +1925,91 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function MineView({ t, onOpenPlaylist, onLogin }) {
+    // ---------- 视图：我喜欢的音乐 ----------
+
+    function LikesView({ t, onBack, onLogin }) {
+      const state = useSession();
+      const uid = state.profile ? state.profile.userId : 0;
+      const likes = useAsync(async () => {
+        if (!uid) return { ids: [], tracks: [] };
+        const data = await rpc('likeSongs', { uid });
+        const ids = Array.isArray(data?.ids) ? data.ids : [];
+        if (ids.length === 0) return { ids, tracks: [] };
+        const chunks = [];
+        for (let index = 0; index < ids.length; index += 100) chunks.push(ids.slice(index, index + 100));
+        const results = await Promise.all(chunks.map((chunk) => rpc('songDetail', { ids: chunk }).catch(() => null)));
+        const songs = [];
+        for (const result of results) {
+          if (result && Array.isArray(result.songs)) songs.push(...result.songs);
+        }
+        return { ids, tracks: normalizeTracks(songs) };
+      }, [uid]);
+      const playerState = usePlayerState();
+      const currentId = playerState.track ? playerState.track.id : null;
+      const tracks = (likes.data && likes.data.tracks) || [];
+      const head = h(
+        'div',
+        { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 } },
+        h('button', { type: 'button', className: 'dnm-btn', onClick: onBack }, h(IconBack, { size: 13 }), t('back')),
+      );
+      if (!state.loggedIn) {
+        return h('div', { className: 'dnm-content' }, head, h(LoginRequired, { t, onLogin }));
+      }
+      return h(
+        'div',
+        { className: 'dnm-content' },
+        head,
+        h(
+          'div',
+          { className: 'dnm-album-head' },
+          h(
+            'div',
+            { className: 'dnm-likes-cover', 'aria-hidden': 'true' },
+            h(IconHeart, { size: 54 }),
+          ),
+          h(
+            'div',
+            null,
+            h('h1', { className: 'dnm-album-title' }, t('likes')),
+            h('p', { className: 'dnm-album-meta' }, t('likesHint')),
+            likes.status === 'ready' && tracks.length ? h('p', { className: 'dnm-artist-meta' }, tracks.length + ' ' + t('songCount')) : null,
+            h(
+              'div',
+              { className: 'dnm-actions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-btn primary',
+                  disabled: tracks.length === 0,
+                  onClick: () => sharedPlayer.playQueue(tracks, 0),
+                },
+                h(IconPlay, { size: 14 }),
+                t('playAll'),
+              ),
+            ),
+          ),
+        ),
+        likes.status === 'loading'
+          ? h(Loading, { label: t('loading') })
+          : likes.status === 'error'
+            ? h(ErrorBox, { message: likes.error, onRetry: likes.reload, retryLabel: t('retry') })
+            : tracks.length === 0
+              ? h(Empty, { label: t('likesEmpty') })
+              : tracks.map((track, index) =>
+                  h(TrackRow, {
+                    key: track.id + '-' + index,
+                    track,
+                    index,
+                    playing: currentId === track.id,
+                    t,
+                    onPlay: () => sharedPlayer.playQueue(tracks, index),
+                  }),
+                ),
+      );
+    }
+
+    function MineView({ t, onOpenPlaylist, onOpenLikes, onLogin }) {
       const state = useSession();
       const uid = state.profile ? state.profile.userId : 0;
       const playlists = useAsync(async () => {
@@ -1782,6 +2022,7 @@ window.__ModuleLoader__.load({
         const data = await rpc('recommendSongs').catch(() => null);
         return normalizeTracks(data?.recommend ?? data?.data?.dailySongs ?? []);
       }, [state.loggedIn]);
+      const recent = useHistory();
       if (!state.loggedIn) {
         return h(
           'div',
@@ -1821,6 +2062,40 @@ window.__ModuleLoader__.load({
             h('p', { className: 'dnm-mine-sig' }, state.profile.signature || ''),
           ),
         ),
+        h(
+          'div',
+          { className: 'dnm-section' },
+          h('h2', { className: 'dnm-h2' }, t('likes')),
+          h(
+            'button',
+            { type: 'button', className: 'dnm-entry', onClick: onOpenLikes },
+            h('span', { className: 'dnm-entry-icon' }, h(IconHeart, { size: 18 })),
+            h('span', { className: 'dnm-entry-label' }, t('likes')),
+            h('span', { className: 'dnm-entry-arrow', 'aria-hidden': 'true' }, '›'),
+          ),
+        ),
+        recent.length > 0
+          ? h(
+              'div',
+              { className: 'dnm-section' },
+              h(
+                'div',
+                { className: 'dnm-section-head' },
+                h('h2', { className: 'dnm-h2' }, t('recent')),
+                h('button', { type: 'button', className: 'dnm-btn', onClick: () => historyStore.clear() }, t('clearHistory')),
+              ),
+              recent.slice(0, 12).map((track, index) =>
+                h(TrackRow, {
+                  key: track.id + '-' + index,
+                  track,
+                  index,
+                  t,
+                  playing: false,
+                  onPlay: () => sharedPlayer.playQueue(recent, index),
+                }),
+              ),
+            )
+          : null,
         daily.data && daily.data.length > 0
           ? h(
               'div',
@@ -2004,7 +2279,10 @@ window.__ModuleLoader__.load({
 
     function PlayerBar({ t, onOpenNowPlaying }) {
       const state = usePlayerState();
+      const session = useSession();
+      const likedIds = useLikedIds();
       const track = state.track;
+      const liked = track ? likedIds.has(track.id) : false;
       const duration = state.duration || (track ? track.duration / 1000 : 0);
       const progress = duration > 0 ? Math.min(state.currentTime, duration) : 0;
       const modeLabel =
@@ -2137,6 +2415,19 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'dnm-player-right' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-icon-btn dnm-player-like' + (liked ? ' liked' : ''),
+              title: !track ? t('nowPlaying') : session.loggedIn ? (liked ? t('unlike') : t('like')) : t('likeHint'),
+              disabled: !track || !session.loggedIn,
+              onClick: () => {
+                if (track && session.loggedIn) likedStore.toggle(track.id).catch(() => undefined);
+              },
+            },
+            h(IconHeart, { size: 15 }),
+          ),
           h(IconVolume, { size: 15 }),
           h('input', {
             className: 'dnm-range dnm-volume',
@@ -2680,6 +2971,10 @@ window.__ModuleLoader__.load({
         return () => sharedPlayer.setPanelVisible(false);
       }, [state.status]);
 
+      useEffect(() => {
+        if (state.loggedIn && state.profile) void likedStore.ensure(state.profile.userId);
+      }, [state.loggedIn, state.profile]);
+
       const openPlaylist = useCallback((id) => {
         setPlaylistId(id);
         setView('playlist');
@@ -2735,10 +3030,13 @@ window.__ModuleLoader__.load({
         content = h(ArtistView, { t, artistId, onBack: () => setView('search') });
       } else if (view === 'album' && albumId) {
         content = h(AlbumView, { t, albumId, onBack: () => setView('search') });
+      } else if (view === 'likes') {
+        content = h(LikesView, { t, onBack: () => setView('mine'), onLogin: () => setLoginOpen(true) });
       } else if (view === 'mine') {
         content = h(MineView, {
           t,
           onOpenPlaylist: openPlaylist,
+          onOpenLikes: () => setView('likes'),
           onLogin: () => setLoginOpen(true),
         });
       } else {
