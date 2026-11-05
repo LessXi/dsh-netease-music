@@ -116,6 +116,15 @@ window.__ModuleLoader__.load({
       recent: '最近播放',
       recentEmpty: '还没有播放记录',
       clearHistory: '清空记录',
+      comments: '评论',
+      hotComments: '热门评论',
+      noComments: '还没有评论',
+      loadMore: '加载更多',
+      commentFloor: '楼',
+      justNow: '刚刚',
+      minutesAgo: '{n} 分钟前',
+      hoursAgo: '{n} 小时前',
+      daysAgo: '{n} 天前',
     };
 
     const en = {
@@ -219,6 +228,15 @@ window.__ModuleLoader__.load({
       recent: 'Recently played',
       recentEmpty: 'Nothing played yet',
       clearHistory: 'Clear history',
+      comments: 'Comments',
+      hotComments: 'Hot comments',
+      noComments: 'No comments yet',
+      loadMore: 'Load more',
+      commentFloor: 'floor',
+      justNow: 'just now',
+      minutesAgo: '{n} min ago',
+      hoursAgo: '{n} h ago',
+      daysAgo: '{n} d ago',
     };
 
     // ---------- 样式 ----------
@@ -388,6 +406,20 @@ window.__ModuleLoader__.load({
 .dnm-row-action:disabled,.dnm-icon-btn:disabled{opacity:.35;cursor:default}
 .dnm-row-like.liked{color:var(--dsw-alias-brand-primary)}
 .dnm-player-like.liked{color:var(--dsw-alias-brand-primary)}
+.dnm-comments{flex:1 1 auto;min-height:0;overflow:auto;padding:4px 10px 32px;max-width:760px;scrollbar-gutter:stable}
+.dnm-comment{display:flex;gap:12px;padding:12px 0;border-bottom:.5px solid var(--dsw-alias-border-l1)}
+.dnm-comment:last-child{border-bottom:0}
+.dnm-comment-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:var(--dsw-alias-bg-layer-2)}
+.dnm-comment-body{flex:1;min-width:0}
+.dnm-comment-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dnm-comment-user{font-size:13px;color:var(--dsw-alias-label-secondary)}
+.dnm-comment-time{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dnm-comment-text{font-size:14px;line-height:1.7;margin:4px 0 0;white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-primary)}
+.dnm-comment-foot{display:flex;align-items:center;gap:14px;margin-top:6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dnm-comment-like{display:inline-flex;align-items:center;gap:4px}
+.dnm-comment-more{display:flex;justify-content:center;padding:18px 0}
+.dnm-comment-hot-tag{font-size:11px;color:var(--dsw-alias-brand-primary);border:.5px solid var(--dsw-alias-brand-primary);border-radius:999px;padding:0 6px;flex:0 0 auto}
+.dnm-comment-section{margin:6px 0 2px;font-size:13px;color:var(--dsw-alias-label-secondary);font-weight:600}
 @media (max-width:760px){.dnm-np-left{display:none}.dnm-artist-head,.dnm-album-head{flex-direction:column}.dnm-artist-avatar{width:96px;height:96px}.dnm-album-cover{width:130px;height:130px}.dnm-likes-cover{width:130px;height:130px}}
     `;
 
@@ -2152,6 +2184,147 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ---------- 评论 ----------
+
+    function commentTime(timestamp, t) {
+      const value = Number(timestamp) || 0;
+      if (!value) return '';
+      const diff = Math.max(0, Date.now() - value);
+      if (diff < 60000) return t('justNow');
+      if (diff < 3600000) return t('minutesAgo').replace('{n}', String(Math.floor(diff / 60000)));
+      if (diff < 86400000) return t('hoursAgo').replace('{n}', String(Math.floor(diff / 3600000)));
+      if (diff < 30 * 86400000) return t('daysAgo').replace('{n}', String(Math.floor(diff / 86400000)));
+      return new Date(value).toLocaleDateString();
+    }
+
+    function useCommentList(trackId) {
+      const [state, setState] = useState({ status: 'loading', hot: [], items: [], total: 0, more: false, error: '', loadingMore: false });
+      useEffect(() => {
+        if (!trackId) return undefined;
+        let cancelled = false;
+        setState({ status: 'loading', hot: [], items: [], total: 0, more: false, error: '', loadingMore: false });
+        rpc('songComment', { id: trackId, limit: 20, offset: 0 })
+          .then((data) => {
+            if (cancelled) return;
+            setState({
+              status: 'ready',
+              hot: Array.isArray(data?.hotComments) ? data.hotComments : [],
+              items: Array.isArray(data?.comments) ? data.comments : [],
+              total: Number(data?.total) || 0,
+              more: Boolean(data?.more),
+              error: '',
+              loadingMore: false,
+            });
+          })
+          .catch((error) => {
+            if (cancelled) return;
+            setState({
+              status: 'error',
+              hot: [],
+              items: [],
+              total: 0,
+              more: false,
+              error: String((error && error.message) || error),
+              loadingMore: false,
+            });
+          });
+        return () => {
+          cancelled = true;
+        };
+      }, [trackId]);
+      const loadMore = useCallback(() => {
+        setState((prev) => (prev.loadingMore || !prev.more ? prev : { ...prev, loadingMore: true }));
+        const offset = state.items.length;
+        rpc('songComment', { id: trackId, limit: 20, offset })
+          .then((data) => {
+            setState((prev) => ({
+              ...prev,
+              items: prev.items.concat(Array.isArray(data?.comments) ? data.comments : []),
+              more: Boolean(data?.more),
+              total: Number(data?.total) || prev.total,
+              loadingMore: false,
+            }));
+          })
+          .catch(() => setState((prev) => ({ ...prev, loadingMore: false })));
+      }, [trackId, state.items.length]);
+      return { ...state, loadMore };
+    }
+
+    function CommentItem({ comment, t, hot }) {
+      const user = comment.user || {};
+      const replied = Array.isArray(comment.beReplied) && comment.beReplied.length > 0 ? comment.beReplied[0] : null;
+      return h(
+        'div',
+        { className: 'dnm-comment' },
+        h('img', {
+          className: 'dnm-comment-avatar',
+          src: user.avatarUrl || '',
+          alt: '',
+          loading: 'lazy',
+          onError: (event) => {
+            event.currentTarget.style.visibility = 'hidden';
+          },
+        }),
+        h(
+          'div',
+          { className: 'dnm-comment-body' },
+          h(
+            'div',
+            { className: 'dnm-comment-head' },
+            h('span', { className: 'dnm-comment-user' }, user.nickname || t('account')),
+            hot ? h('span', { className: 'dnm-comment-hot-tag' }, t('hotComments')) : null,
+            h('span', { className: 'dnm-comment-time' }, commentTime(comment.time, t)),
+          ),
+          h('p', { className: 'dnm-comment-text' }, comment.content || ''),
+          replied
+            ? h(
+                'p',
+                { className: 'dnm-comment-text', style: { color: 'var(--dsw-alias-label-secondary)', fontSize: 13 } },
+                '@' + ((replied.user && replied.user.nickname) || '') + '：' + (replied.content || ''),
+              )
+            : null,
+          h(
+            'div',
+            { className: 'dnm-comment-foot' },
+            h('span', { className: 'dnm-comment-like' }, h(IconHeart, { size: 12 }), formatCount(comment.likedCount || 0)),
+            comment.floor ? h('span', null, '#' + comment.floor) : null,
+          ),
+        ),
+      );
+    }
+
+    function CommentsPanel({ t, trackId }) {
+      const list = useCommentList(trackId);
+      if (!trackId) return h('div', { className: 'dnm-lyrics-empty' }, t('noComments'));
+      if (list.status === 'loading') return h(Loading, { label: t('loading') });
+      if (list.status === 'error') return h('div', { className: 'dnm-lyrics-empty' }, list.error);
+      if (list.hot.length === 0 && list.items.length === 0) return h('div', { className: 'dnm-lyrics-empty' }, t('noComments'));
+      return h(
+        'div',
+        { className: 'dnm-comments' },
+        list.hot.length > 0
+          ? h(
+              React.Fragment,
+              null,
+              h('div', { className: 'dnm-comment-section' }, t('hotComments')),
+              list.hot.map((comment, index) => h(CommentItem, { key: 'hot-' + index, comment, t, hot: true })),
+            )
+          : null,
+        list.items.map((comment, index) => h(CommentItem, { key: 'comment-' + index, comment, t })),
+        list.more
+          ? h(
+              'div',
+              { className: 'dnm-comment-more' },
+              h(
+                'button',
+                { type: 'button', className: 'dnm-btn', disabled: list.loadingMore, onClick: list.loadMore },
+                list.loadingMore ? t('loading') : t('loadMore'),
+              ),
+            )
+          : null,
+      );
+    }
+
     // ---------- 正在播放（歌词 / 播放队列） ----------
 
     function NowPlayingView({ t, onBack }) {
@@ -2196,7 +2369,9 @@ window.__ModuleLoader__.load({
       );
 
       let right;
-      if (tab === 'queue') {
+      if (tab === 'comments') {
+        right = h(CommentsPanel, { t, trackId: track ? track.id : null });
+      } else if (tab === 'queue') {
         const queue = state.queue || [];
         right =
           queue.length === 0
@@ -2268,6 +2443,11 @@ window.__ModuleLoader__.load({
               'button',
               { type: 'button', className: 'dnm-np-tab' + (tab === 'queue' ? ' active' : ''), onClick: () => setTab('queue') },
               t('queue') + ' (' + (state.queue.length || 0) + ')',
+            ),
+            h(
+              'button',
+              { type: 'button', className: 'dnm-np-tab' + (tab === 'comments' ? ' active' : ''), onClick: () => setTab('comments') },
+              t('comments'),
             ),
           ),
         ),

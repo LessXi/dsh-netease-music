@@ -253,8 +253,12 @@ const ALLOWED_APIS = {
   },
   songComment: {
     method: 'GET',
-    path: '/api/v1/resource/comments/R_SO_4_0',
-    query: (p) => ({ rid: normalizeId(p.id), limit: clampInt(p.limit, 1, 50, 20), offset: clampInt(p.offset, 0, 10000, 0) }),
+    path: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌曲 id 不合法');
+      return '/api/v1/resource/comments/R_SO_4_' + id;
+    },
+    query: (p) => ({ limit: clampInt(p.limit, 1, 50, 20), offset: clampInt(p.offset, 0, 10000, 0) }),
   },
   artistDetail: {
     // 老接口一次返回歌手信息 + 热门 50 首（hotSongs）
