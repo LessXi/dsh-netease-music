@@ -214,7 +214,8 @@ const ALLOWED_APIS = {
     path: '/weapi/song/enhance/player/url/v1',
     payload: (p) => {
       const ids = normalizeIds(p.ids);
-      return { ids: '[' + ids.map((id) => JSON.stringify(String(id))).join(',') + ']', level: 'standard', encodeType: 'flac' };
+      const level = QUALITY_LEVELS.includes(p.level) ? p.level : 'standard';
+      return { ids: '[' + ids.map((id) => JSON.stringify(String(id))).join(',') + ']', level, encodeType: 'flac' };
     },
   },
   lyric: {
@@ -363,6 +364,9 @@ function normalizeIds(value) {
   if (!Array.isArray(value)) return [];
   return value.map(normalizeId).filter((id) => id !== undefined).slice(0, 100);
 }
+
+// 播放音质档位：标准 / 较高 / 极高 / 无损（无损需要会员）
+const QUALITY_LEVELS = ['standard', 'higher', 'exhigh', 'lossless'];
 
 // ---------- HTTP 工具 ----------
 

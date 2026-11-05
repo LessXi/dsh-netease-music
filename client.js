@@ -119,6 +119,11 @@ window.__ModuleLoader__.load({
       searchHistory: '搜索历史',
       hotSearch: '热门搜索',
       clear: '清空',
+      quality: '音质',
+      qualityStandard: '标准',
+      qualityHigher: '较高',
+      qualityExhigh: '极高',
+      qualityLossless: '无损',
       comments: '评论',
       hotComments: '热门评论',
       noComments: '还没有评论',
@@ -247,6 +252,11 @@ window.__ModuleLoader__.load({
       searchHistory: 'Search history',
       hotSearch: 'Trending',
       clear: 'Clear',
+      quality: 'Quality',
+      qualityStandard: 'Standard',
+      qualityHigher: 'Higher',
+      qualityExhigh: 'High',
+      qualityLossless: 'Lossless',
       comments: 'Comments',
       hotComments: 'Hot comments',
       noComments: 'No comments yet',
@@ -361,6 +371,9 @@ window.__ModuleLoader__.load({
 .dnm-controls{display:flex;align-items:center;gap:12px}
 .dnm-icon-btn{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:50%;background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer;flex:0 0 auto}
 .dnm-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dnm-quality-btn{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:1;padding:5px 8px;border-radius:999px;cursor:pointer;flex:0 0 auto;transition:color .15s,border-color .15s}
+.dnm-quality-btn:hover:not(:disabled){color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
+.dnm-quality-btn:disabled{opacity:.35;cursor:default}
 .dnm-icon-btn:disabled{opacity:.4;cursor:default;background:transparent}
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dsw-alias-brand-primary);color:#fff}
 .dnm-icon-btn.play:hover{background:var(--dsw-alias-brand-primary);opacity:.9}
@@ -565,6 +578,19 @@ window.__ModuleLoader__.load({
 
     // ---------- 播放器（模块级单例，跨面板存活） ----------
 
+    const QUALITY_LEVELS = ['standard', 'higher', 'exhigh', 'lossless'];
+    const QUALITY_KEY = 'dsh-netease-music:quality';
+    const QUALITY_LABELS = { standard: 'qualityStandard', higher: 'qualityHigher', exhigh: 'qualityExhigh', lossless: 'qualityLossless' };
+
+    function readQuality() {
+      try {
+        const value = window.localStorage.getItem(QUALITY_KEY);
+        return QUALITY_LEVELS.includes(value) ? value : 'exhigh';
+      } catch {
+        return 'exhigh';
+      }
+    }
+
     function createPlayer() {
       let state = {
         audio: null,
@@ -578,6 +604,7 @@ window.__ModuleLoader__.load({
         duration: 0,
         volume: 0.8,
         mode: 'list',
+        quality: readQuality(),
         url: '',
         panelVisible: false,
       };
@@ -661,7 +688,7 @@ window.__ModuleLoader__.load({
         patch({ track: normalized, queue, index, loading: true, error: '', currentTime: 0, duration: normalized.duration / 1000 || 0 });
         historyStore.record(normalized);
         try {
-          const data = await rpc('songUrl', { ids: [normalized.id] });
+          const data = await rpc('songUrl', { ids: [normalized.id], level: state.quality });
           if (token !== playToken) return;
           const entry = Array.isArray(data?.data) ? data.data.find((item) => item && item.id === normalized.id) ?? data.data[0] : null;
           const url = entry && entry.url ? String(entry.url) : '';
@@ -755,6 +782,60 @@ window.__ModuleLoader__.load({
         setMode(modes[(modes.indexOf(state.mode) + 1) % modes.length]);
       }
 
+      function setQuality(level) {
+        if (!QUALITY_LEVELS.includes(level) || level === state.quality) return;
+        try {
+          window.localStorage.setItem(QUALITY_KEY, level);
+        } catch {
+          /* 存储不可用时只在本次会话生效 */
+        }
+        patch({ quality: level });
+        const audio = state.audio;
+        const track = state.track;
+        if (!audio || !track) return;
+        // 换音质时保持当前进度与播放状态
+        const at = audio.currentTime;
+        const wasPlaying = !audio.paused;
+        const token = ++playToken;
+        patch({ loading: true, error: '' });
+        void (async () => {
+          try {
+            const data = await rpc('songUrl', { ids: [track.id], level });
+            if (token !== playToken) return;
+            const entry = Array.isArray(data?.data)
+              ? data.data.find((item) => item && item.id === track.id) ?? data.data[0]
+              : null;
+            const url = entry && entry.url ? String(entry.url) : '';
+            if (!url) {
+              patch({ loading: false, error: '这个音质暂时不可用，换一个试试' });
+              return;
+            }
+            audio.src = url;
+            audio.addEventListener(
+              'loadedmetadata',
+              () => {
+                try {
+                  audio.currentTime = at;
+                } catch {
+                  /* 时长未知时忽略 */
+                }
+                if (wasPlaying) void audio.play().catch(() => undefined);
+              },
+              { once: true },
+            );
+            patch({ url, loading: false });
+          } catch (error) {
+            if (token !== playToken) return;
+            patch({ loading: false, error: String((error && error.message) || error) });
+          }
+        })();
+      }
+
+      function cycleQuality() {
+        const order = QUALITY_LEVELS;
+        setQuality(order[(order.indexOf(state.quality) + 1) % order.length]);
+      }
+
       function playQueue(tracks, startIndex) {
         const queue = normalizeTracks(tracks);
         if (queue.length === 0) return;
@@ -832,6 +913,8 @@ window.__ModuleLoader__.load({
         setVolume,
         setMode,
         cycleMode,
+        setQuality,
+        cycleQuality,
         setPanelVisible,
         clearError,
       };
@@ -2984,6 +3067,17 @@ window.__ModuleLoader__.load({
               },
             },
             h(IconHeart, { size: 15 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-quality-btn',
+              title: t('quality') + '：' + t(QUALITY_LABELS[state.quality]),
+              disabled: !track,
+              onClick: () => sharedPlayer.cycleQuality(),
+            },
+            t(QUALITY_LABELS[state.quality]),
           ),
           h(IconVolume, { size: 15 }),
           h('input', {
