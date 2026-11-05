@@ -125,6 +125,16 @@ window.__ModuleLoader__.load({
       minutesAgo: '{n} 分钟前',
       hoursAgo: '{n} 小时前',
       daysAgo: '{n} 天前',
+      playCountLabel: '播放',
+      subscribeCountLabel: '收藏',
+      commentCountLabel: '评论',
+      subscribe: '收藏',
+      subscribed: '已收藏',
+      tracksTab: '曲目',
+      commentsTab: '评论',
+      expand: '展开',
+      collapse: '收起',
+      updatedAt: '更新于 {n}',
     };
 
     const en = {
@@ -237,6 +247,16 @@ window.__ModuleLoader__.load({
       minutesAgo: '{n} min ago',
       hoursAgo: '{n} h ago',
       daysAgo: '{n} d ago',
+      playCountLabel: 'plays',
+      subscribeCountLabel: 'subscribers',
+      commentCountLabel: 'comments',
+      subscribe: 'Subscribe',
+      subscribed: 'Subscribed',
+      tracksTab: 'Tracks',
+      commentsTab: 'Comments',
+      expand: 'Expand',
+      collapse: 'Collapse',
+      updatedAt: 'updated {n}',
     };
 
     // ---------- 样式 ----------
@@ -302,6 +322,14 @@ window.__ModuleLoader__.load({
 .dnm-playlist-info{flex:1 1 auto;min-width:0;padding-top:4px}
 .dnm-playlist-name{font-size:20px;font-weight:600;margin:0 0 8px;word-break:break-word}
 .dnm-playlist-meta{font-size:12px;color:var(--dsw-alias-label-secondary);margin:0 0 14px}
+.dnm-playlist-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.dnm-playlist-tag{font-size:11px;line-height:20px;padding:0 8px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.dnm-playlist-creator{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.dnm-playlist-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;background:var(--dsw-alias-bg-layer-2);flex:0 0 auto}
+.dnm-playlist-stats{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--dsw-alias-label-secondary);margin:0 0 12px}
+.dnm-playlist-desc{font-size:13px;line-height:1.7;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-word;margin:0 0 8px;max-height:66px;overflow:hidden}
+.dnm-playlist-desc.expanded{max-height:none}
+.dnm-playlist-desc-toggle{align-self:flex-start;border:0;background:transparent;color:var(--dsw-alias-brand-primary);font:inherit;font-size:12px;cursor:pointer;padding:0;margin:0 0 14px}
 .dnm-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dnm-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:16px;border:.5px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
 .dnm-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1371,20 +1399,48 @@ window.__ModuleLoader__.load({
         const data = await rpc('playlistDetail', { id: playlistId, n: 1000 });
         const playlist = data?.playlist;
         if (!playlist) throw new Error('歌单不存在或已下架');
+        const creator = playlist.creator || {};
+        const tagList = [
+          ...(Array.isArray(playlist.tags) ? playlist.tags : []),
+          ...(Array.isArray(playlist.displayTags) ? playlist.displayTags : []),
+        ];
         return {
           id: playlist.id,
           name: playlist.name,
           coverUrl: playlist.coverImgUrl,
-          creator: playlist.creator?.nickname || '',
+          creator: creator.nickname || '',
+          creatorAvatar: creator.avatarUrl || '',
           trackCount: playlist.trackCount || (playlist.tracks ? playlist.tracks.length : 0),
-          description: playlist.description || '',
-          tags: Array.isArray(playlist.tags) ? playlist.tags : [],
+          description: (playlist.description || '').trim(),
+          tags: [...new Set(tagList)].filter(Boolean),
+          playCount: Number(playlist.playCount) || 0,
+          subscribedCount: Number(playlist.subscribedCount) || 0,
+          commentCount: Number(playlist.commentCount) || 0,
+          subscribed: Boolean(playlist.subscribed),
+          updateTime: Number(playlist.updateTime) || 0,
           tracks: normalizeTracks(playlist.tracks),
         };
       }, [playlistId]);
       const playerState = usePlayerState();
+      const session = useSession();
+      const [tab, setTab] = useState('tracks');
+      const [expanded, setExpanded] = useState(false);
+      const [subscribedOverride, setSubscribedOverride] = useState(null);
+      const [subscribeBusy, setSubscribeBusy] = useState(false);
+      const [subscribeError, setSubscribeError] = useState('');
       const playlist = detail.data;
       const currentId = playerState.track ? playerState.track.id : null;
+      const subscribed = playlist ? (subscribedOverride === null ? playlist.subscribed : subscribedOverride) : false;
+      const toggleSubscribe = () => {
+        if (!playlist || subscribeBusy) return;
+        const next = !subscribed;
+        setSubscribeBusy(true);
+        setSubscribeError('');
+        rpc('playlistSubscribe', { id: playlist.id, subscribe: next })
+          .then(() => setSubscribedOverride(next))
+          .catch((error) => setSubscribeError(String((error && error.message) || error)))
+          .then(() => setSubscribeBusy(false));
+      };
       return h(
         'div',
         { className: 'dnm-content' },
@@ -1413,19 +1469,44 @@ window.__ModuleLoader__.load({
                     'div',
                     { className: 'dnm-playlist-info' },
                     h('h1', { className: 'dnm-playlist-name' }, playlist.name),
+                    playlist.tags.length > 0
+                      ? h(
+                          'div',
+                          { className: 'dnm-playlist-tags' },
+                          playlist.tags.map((tag, index) => h('span', { key: tag + '-' + index, className: 'dnm-playlist-tag' }, tag)),
+                        )
+                      : null,
+                    playlist.creator
+                      ? h(
+                          'div',
+                          { className: 'dnm-playlist-creator' },
+                          playlist.creatorAvatar
+                            ? h('img', { className: 'dnm-playlist-avatar', src: playlist.creatorAvatar, alt: '', loading: 'lazy' })
+                            : null,
+                          h('span', null, playlist.creator),
+                        )
+                      : null,
                     h(
-                      'p',
-                      { className: 'dnm-playlist-meta' },
-                      (playlist.creator ? playlist.creator + ' · ' : '') + playlist.trackCount + recordSuffix(t),
+                      'div',
+                      { className: 'dnm-playlist-stats' },
+                      h('span', null, formatCount(playlist.playCount) + ' ' + t('playCountLabel')),
+                      h('span', null, formatCount(playlist.subscribedCount) + ' ' + t('subscribeCountLabel')),
+                      h('span', null, formatCount(playlist.commentCount) + ' ' + t('commentCountLabel')),
+                      h('span', null, playlist.trackCount + recordSuffix(t)),
+                      playlist.updateTime
+                        ? h('span', null, t('updatedAt').replace('{n}', new Date(playlist.updateTime).toLocaleDateString()))
+                        : null,
                     ),
                     playlist.description
-                      ? h(
-                          'p',
-                          {
-                            className: 'dnm-playlist-meta',
-                            style: { maxHeight: 42, overflow: 'hidden', marginBottom: 14 },
-                          },
-                          playlist.description,
+                      ? h(React.Fragment, null,
+                          h('p', { className: 'dnm-playlist-desc' + (expanded ? ' expanded' : '') }, playlist.description),
+                          playlist.description.length > 60
+                            ? h(
+                                'button',
+                                { type: 'button', className: 'dnm-playlist-desc-toggle', onClick: () => setExpanded((value) => !value) },
+                                expanded ? t('collapse') : t('expand'),
+                              )
+                            : null,
                         )
                       : null,
                     h(
@@ -1442,25 +1523,56 @@ window.__ModuleLoader__.load({
                         h(IconPlay, { size: 14 }),
                         t('playAll'),
                       ),
-                    ),
-                  ),
-                ),
-                playlist.tracks.length === 0
-                  ? h(Empty, { label: t('empty') })
-                  : h(
-                      'div',
-                      null,
-                      playlist.tracks.map((track, index) =>
-                        h(TrackRow, {
-                          key: track.id + '-' + index,
-                          track,
-                          index,
-                          playing: currentId === track.id,
-                          t,
-                          onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
-                        }),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dnm-btn' + (subscribed ? ' primary' : ''),
+                          disabled: !session.loggedIn || subscribeBusy,
+                          title: session.loggedIn ? '' : t('loginRequired'),
+                          onClick: toggleSubscribe,
+                        },
+                        h(IconHeart, { size: 14 }),
+                        subscribed ? t('subscribed') : t('subscribe'),
                       ),
                     ),
+                    subscribeError
+                      ? h('p', { className: 'dnm-playlist-meta', style: { color: 'var(--dsw-alias-state-error-primary)' } }, subscribeError)
+                      : null,
+                  ),
+                ),
+                h(
+                  'div',
+                  { className: 'dnm-tabs' },
+                  h(
+                    'button',
+                    { type: 'button', className: 'dnm-tab' + (tab === 'tracks' ? ' active' : ''), onClick: () => setTab('tracks') },
+                    t('tracksTab') + ' (' + playlist.tracks.length + ')',
+                  ),
+                  h(
+                    'button',
+                    { type: 'button', className: 'dnm-tab' + (tab === 'comments' ? ' active' : ''), onClick: () => setTab('comments') },
+                    t('commentsTab') + ' (' + formatCount(playlist.commentCount) + ')',
+                  ),
+                ),
+                tab === 'comments'
+                  ? h(CommentsPanel, { t, kind: 'playlist', id: playlist.id })
+                  : playlist.tracks.length === 0
+                    ? h(Empty, { label: t('empty') })
+                    : h(
+                        'div',
+                        null,
+                        playlist.tracks.map((track, index) =>
+                          h(TrackRow, {
+                            key: track.id + '-' + index,
+                            track,
+                            index,
+                            playing: currentId === track.id,
+                            t,
+                            onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
+                          }),
+                        ),
+                      ),
               ),
       );
     }
@@ -2197,13 +2309,14 @@ window.__ModuleLoader__.load({
       return new Date(value).toLocaleDateString();
     }
 
-    function useCommentList(trackId) {
+    function useCommentList(kind, id) {
+      const api = kind === 'playlist' ? 'playlistComment' : 'songComment';
       const [state, setState] = useState({ status: 'loading', hot: [], items: [], total: 0, more: false, error: '', loadingMore: false });
       useEffect(() => {
-        if (!trackId) return undefined;
+        if (!id) return undefined;
         let cancelled = false;
         setState({ status: 'loading', hot: [], items: [], total: 0, more: false, error: '', loadingMore: false });
-        rpc('songComment', { id: trackId, limit: 20, offset: 0 })
+        rpc(api, { id, limit: 20, offset: 0 })
           .then((data) => {
             if (cancelled) return;
             setState({
@@ -2231,11 +2344,11 @@ window.__ModuleLoader__.load({
         return () => {
           cancelled = true;
         };
-      }, [trackId]);
+      }, [api, id]);
       const loadMore = useCallback(() => {
         setState((prev) => (prev.loadingMore || !prev.more ? prev : { ...prev, loadingMore: true }));
         const offset = state.items.length;
-        rpc('songComment', { id: trackId, limit: 20, offset })
+        rpc(api, { id, limit: 20, offset })
           .then((data) => {
             setState((prev) => ({
               ...prev,
@@ -2246,7 +2359,7 @@ window.__ModuleLoader__.load({
             }));
           })
           .catch(() => setState((prev) => ({ ...prev, loadingMore: false })));
-      }, [trackId, state.items.length]);
+      }, [api, id, state.items.length]);
       return { ...state, loadMore };
     }
 
@@ -2293,9 +2406,9 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function CommentsPanel({ t, trackId }) {
-      const list = useCommentList(trackId);
-      if (!trackId) return h('div', { className: 'dnm-lyrics-empty' }, t('noComments'));
+    function CommentsPanel({ t, kind, id }) {
+      const list = useCommentList(kind, id);
+      if (!id) return h('div', { className: 'dnm-lyrics-empty' }, t('noComments'));
       if (list.status === 'loading') return h(Loading, { label: t('loading') });
       if (list.status === 'error') return h('div', { className: 'dnm-lyrics-empty' }, list.error);
       if (list.hot.length === 0 && list.items.length === 0) return h('div', { className: 'dnm-lyrics-empty' }, t('noComments'));
@@ -2370,7 +2483,7 @@ window.__ModuleLoader__.load({
 
       let right;
       if (tab === 'comments') {
-        right = h(CommentsPanel, { t, trackId: track ? track.id : null });
+        right = h(CommentsPanel, { t, kind: 'song', id: track ? track.id : null });
       } else if (tab === 'queue') {
         const queue = state.queue || [];
         right =
