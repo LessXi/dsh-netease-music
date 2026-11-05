@@ -124,6 +124,9 @@ window.__ModuleLoader__.load({
       qualityHigher: '较高',
       qualityExhigh: '极高',
       qualityLossless: '无损',
+      playNow: '立即播放',
+      playNext: '下一首播放',
+      addToQueue: '加入播放队列',
       comments: '评论',
       hotComments: '热门评论',
       noComments: '还没有评论',
@@ -257,6 +260,9 @@ window.__ModuleLoader__.load({
       qualityHigher: 'Higher',
       qualityExhigh: 'High',
       qualityLossless: 'Lossless',
+      playNow: 'Play now',
+      playNext: 'Play next',
+      addToQueue: 'Add to queue',
       comments: 'Comments',
       hotComments: 'Hot comments',
       noComments: 'No comments yet',
@@ -374,6 +380,11 @@ window.__ModuleLoader__.load({
 .dnm-quality-btn{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:1;padding:5px 8px;border-radius:999px;cursor:pointer;flex:0 0 auto;transition:color .15s,border-color .15s}
 .dnm-quality-btn:hover:not(:disabled){color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
 .dnm-quality-btn:disabled{opacity:.35;cursor:default}
+.dnm-menu-mask{position:fixed;inset:0;z-index:60}
+.dnm-menu{position:fixed;min-width:180px;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.3);padding:6px;display:flex;flex-direction:column;gap:2px}
+.dnm-menu-title{font-size:11px;color:var(--dsw-alias-label-tertiary);padding:4px 8px 6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-menu-item{border:0;background:none;text-align:left;color:var(--dsw-alias-label-primary);font-size:13px;padding:7px 10px;border-radius:6px;cursor:pointer;transition:background .15s}
+.dnm-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-icon-btn:disabled{opacity:.4;cursor:default;background:transparent}
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dsw-alias-brand-primary);color:#fff}
 .dnm-icon-btn.play:hover{background:var(--dsw-alias-brand-primary);opacity:.9}
@@ -843,6 +854,30 @@ window.__ModuleLoader__.load({
         void playTrack(queue[index], { queue, index });
       }
 
+      function playNext(track) {
+        const normalized = normalizeTrack(track);
+        if (!normalized) return;
+        const queue = [...state.queue];
+        if (queue.length === 0) {
+          void playTrack(normalized, { queue: [normalized], index: 0 });
+          return;
+        }
+        const at = Math.max(0, Math.min(state.index + 1, queue.length));
+        queue.splice(at, 0, normalized);
+        patch({ queue, index: state.index });
+      }
+
+      function addToQueue(track) {
+        const normalized = normalizeTrack(track);
+        if (!normalized) return;
+        const queue = [...state.queue, normalized];
+        if (state.queue.length === 0) {
+          patch({ queue, index: -1 });
+          return;
+        }
+        patch({ queue });
+      }
+
       function removeFromQueue(targetIndex) {
         const index = Number(targetIndex);
         const queue = state.queue;
@@ -904,6 +939,8 @@ window.__ModuleLoader__.load({
         bindAudio,
         playTrack,
         playQueue,
+        playNext,
+        addToQueue,
         removeFromQueue,
         clearQueue,
         toggle,
@@ -1035,6 +1072,49 @@ window.__ModuleLoader__.load({
 
     function useLikedIds() {
       return useSyncExternalStore(likedStore.subscribe, likedStore.getSnapshot, likedStore.getSnapshot);
+    }
+
+    // ---------- 曲目右键菜单（模块级，任意列表行都能唤起） ----------
+
+    const contextMenuStore = (() => {
+      let current = null;
+      const listeners = new Set();
+      const emit = () => {
+        for (const listener of [...listeners]) {
+          try {
+            listener();
+          } catch {
+            /* 单个订阅者出错不影响其他订阅者 */
+          }
+        }
+      };
+      return {
+        open(event, track) {
+          if (!track) return;
+          current = {
+            track,
+            x: Number(event && event.clientX) || 0,
+            y: Number(event && event.clientY) || 0,
+          };
+          emit();
+        },
+        close() {
+          if (!current) return;
+          current = null;
+          emit();
+        },
+        getSnapshot() {
+          return current;
+        },
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+    })();
+
+    function useContextMenu() {
+      return useSyncExternalStore(contextMenuStore.subscribe, contextMenuStore.getSnapshot, contextMenuStore.getSnapshot);
     }
 
     function usePlayerState() {
@@ -1365,6 +1445,11 @@ window.__ModuleLoader__.load({
         {
           className: 'dnm-row' + (playing ? ' playing' : ''),
           onDoubleClick: () => onPlay(),
+          onContextMenu: (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            contextMenuStore.open(event, track);
+          },
           role: 'button',
           tabIndex: 0,
           onKeyDown: (event) => {
@@ -1432,8 +1517,57 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // ---------- 视图：发现 ----------
+    // 曲目右键菜单：任意列表行右键唤起，可立即播放 / 下一首播放 / 加入队列
+    function ContextMenu({ t }) {
+      const menu = useContextMenu();
+      useEffect(() => {
+        if (!menu) return undefined;
+        const onKey = (event) => {
+          if (event.key === 'Escape') contextMenuStore.close();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [menu]);
+      if (!menu) return null;
+      const track = menu.track;
+      const left = Math.max(8, Math.min(menu.x, window.innerWidth - 212));
+      const top = Math.max(8, Math.min(menu.y, window.innerHeight - 168));
+      const item = (label, onClick) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dnm-menu-item',
+            onClick: (event) => {
+              event.stopPropagation();
+              contextMenuStore.close();
+              onClick();
+            },
+          },
+          label,
+        );
+      return h(
+        'div',
+        {
+          className: 'dnm-menu-mask',
+          onClick: () => contextMenuStore.close(),
+          onContextMenu: (event) => {
+            event.preventDefault();
+            contextMenuStore.close();
+          },
+        },
+        h(
+          'div',
+          { className: 'dnm-menu', style: { left, top }, onClick: (event) => event.stopPropagation() },
+          h('div', { className: 'dnm-menu-title' }, track.name),
+          item(t('playNow'), () => sharedPlayer.playQueue([track], 0)),
+          item(t('playNext'), () => sharedPlayer.playNext(track)),
+          item(t('addToQueue'), () => sharedPlayer.addToQueue(track)),
+        ),
+      );
+    }
 
+    // ---------- 视图：发现 ----------
     function DiscoverView({ t, onOpenPlaylist, onOpenToplist }) {
       const charts = useAsync(async () => {
         const data = await rpc('toplist');
@@ -3811,6 +3945,7 @@ window.__ModuleLoader__.load({
           ),
         ),
         h(PlayerBar, { t, onOpenNowPlaying: openNowPlaying }),
+        h(ContextMenu, { t }),
         loginOpen
           ? h(LoginDialog, {
               t,
