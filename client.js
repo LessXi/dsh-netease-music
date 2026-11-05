@@ -85,6 +85,12 @@ window.__ModuleLoader__.load({
       noResult: '没有找到相关歌曲',
       loginToSee: '登录后查看',
       account: '账号',
+      nowPlayingPage: '正在播放',
+      lyrics: '歌词',
+      noLyric: '纯音乐，请欣赏',
+      lyricLoading: '歌词加载中…',
+      queueEmpty: '播放队列是空的',
+      coverAlt: '封面',
     };
 
     const en = {
@@ -157,6 +163,12 @@ window.__ModuleLoader__.load({
       noResult: 'No matching songs',
       loginToSee: 'Log in to view',
       account: 'Account',
+      nowPlayingPage: 'Now playing',
+      lyrics: 'Lyrics',
+      noLyric: 'Instrumental — enjoy',
+      lyricLoading: 'Loading lyrics…',
+      queueEmpty: 'The queue is empty',
+      coverAlt: 'Cover',
     };
 
     // ---------- 样式 ----------
@@ -280,6 +292,27 @@ window.__ModuleLoader__.load({
 .dnm-scroll::-webkit-scrollbar{width:9px;height:9px}
 .dnm-scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2);border-radius:5px;border:2px solid transparent;background-clip:padding-box}
 .dnm-scroll::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-border-l1);background-clip:padding-box}
+.dnm-np{display:flex;flex-direction:column;height:100%;min-height:0;width:100%;background:var(--dsw-alias-bg-base);overflow:hidden}
+.dnm-np-head{display:flex;align-items:center;gap:10px;padding:12px 18px 4px;flex:0 0 auto}
+.dnm-np-titlebar{font-size:13px;color:var(--dsw-alias-label-secondary);margin-right:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-np-tabs{display:flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;flex:0 0 auto}
+.dnm-np-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1;padding:6px 13px;border-radius:7px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.dnm-np-tab.active{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-weight:600}
+.dnm-np-body{flex:1 1 auto;min-height:0;display:flex;gap:clamp(20px,4vw,44px);padding:12px clamp(18px,4vw,44px) 20px;overflow:hidden}
+.dnm-np-left{width:min(300px,34%);flex:0 0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding-top:12px;min-height:0}
+.dnm-np-cover{width:100%;aspect-ratio:1/1;border-radius:18px;object-fit:cover;background:var(--dsw-alias-bg-layer-2);box-shadow:0 16px 44px rgba(0,0,0,.26)}
+.dnm-np-name{font-size:19px;font-weight:600;margin:2px 0 0;line-height:1.35;word-break:break-word;max-width:100%}
+.dnm-np-artist{font-size:13px;color:var(--dsw-alias-label-secondary);margin:0;max-width:100%;word-break:break-word}
+.dnm-np-album{font-size:12px;color:var(--dsw-alias-label-tertiary);margin:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-np-right{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;min-height:0}
+.dnm-lyrics{flex:1 1 auto;min-height:0;overflow:auto;padding:8px 10px 72px;scrollbar-gutter:stable;display:flex;flex-direction:column}
+.dnm-lyric-line{padding:8px 6px;font-size:14px;line-height:1.55;color:var(--dsw-alias-label-tertiary);text-align:center;transition:color .18s,transform .18s;transform-origin:center;white-space:pre-wrap;word-break:break-word;cursor:pointer}
+.dnm-lyric-line:hover{color:var(--dsw-alias-label-secondary)}
+.dnm-lyric-line.active{color:var(--dsw-alias-label-primary);font-weight:600;transform:scale(1.04)}
+.dnm-lyric-trans{display:block;font-size:12px;font-weight:400;color:var(--dsw-alias-label-tertiary);margin-top:2px}
+.dnm-lyrics-empty{flex:1 1 auto;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary);font-size:13px;padding:40px 0}
+.dnm-np-queue{flex:1 1 auto;min-height:0;overflow:auto;padding:4px 0 48px;scrollbar-gutter:stable}
+@media (max-width:760px){.dnm-np-left{display:none}}
     `;
 
     function ensureCss() {
@@ -335,23 +368,26 @@ window.__ModuleLoader__.load({
       return String(count);
     };
 
+    // 幂等：既能吃网易云原始曲目（ar/al/dt/alia），也能吃已经归一化过的对象。
     function normalizeTrack(raw) {
       if (!raw || typeof raw !== 'object') return null;
-      const artists = Array.isArray(raw.ar)
-        ? raw.ar.map((artist) => artist && artist.name).filter(Boolean)
-        : Array.isArray(raw.artists)
-          ? raw.artists.map((artist) => artist && artist.name).filter(Boolean)
-          : [];
-      const album = raw.al ?? raw.album ?? {};
+      const artistList = Array.isArray(raw.ar) ? raw.ar : Array.isArray(raw.artists) ? raw.artists : [];
+      const artists = artistList
+        .map((artist) => (typeof artist === 'string' ? artist : artist && artist.name))
+        .filter(Boolean);
+      const albumObject = raw.al && typeof raw.al === 'object' ? raw.al : raw.album && typeof raw.album === 'object' ? raw.album : null;
+      const albumName = typeof raw.album === 'string' ? raw.album : (albumObject && albumObject.name) || '';
+      const coverUrl = (albumObject && albumObject.picUrl) || raw.coverUrl || raw.picUrl || '';
+      const alias = Array.isArray(raw.alia) && raw.alia.length > 0 ? raw.alia[0] : typeof raw.alias === 'string' ? raw.alias : '';
       return {
         id: raw.id,
         name: raw.name || '未知歌曲',
         artists,
-        album: album.name || '',
-        coverUrl: album.picUrl || raw.picUrl || '',
+        album: albumName,
+        coverUrl,
         duration: raw.dt ?? raw.duration ?? 0,
         fee: raw.fee ?? 0,
-        alias: Array.isArray(raw.alia) && raw.alia.length > 0 ? raw.alia[0] : '',
+        alias,
       };
     }
 
@@ -360,8 +396,8 @@ window.__ModuleLoader__.load({
       return list.map(normalizeTrack).filter(Boolean);
     }
 
-    function artistText(track) {
-      if (!track || track.artists.length === 0) return '未知歌手';
+    function artistText(track, t) {
+      if (!track || !Array.isArray(track.artists) || track.artists.length === 0) return t ? t('unknownArtist') : '未知歌手';
       return track.artists.join(' / ');
     }
 
@@ -725,6 +761,14 @@ window.__ModuleLoader__.load({
     const IconHeart = ({ size = 14 }) => svgIcon(size, 'M12 21s-7.5-4.7-9.3-9A5.2 5.2 0 0112 6.4 5.2 5.2 0 0121.3 12c-1.8 4.3-9.3 9-9.3 9z');
     const IconRefresh = ({ size = 14 }) => svgIcon(size, 'M12 5V2L7 6l5 4V7a5 5 0 11-5 5H5a7 7 0 107-7z');
     const IconMusic = ({ size = 14 }) => svgIcon(size, 'M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zM19 16a3 3 0 11-3-3 3 3 0 013 3z');
+    const IconLyric = ({ size = 15 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [
+          h('path', { key: 'a', d: 'M4 7h16M4 12h11M4 17h7', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' }),
+          h('path', { key: 'b', d: 'M18 13v5M18 13l2.2-.5v4.6', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' }),
+        ],
+      });
 
     // 侧边栏图标：云朵 + 音符。颜色跟随侧边栏文字色，选中态由侧边栏自己渲染。
     function NeteaseIcon({ size = 20, active = false }) {
@@ -825,6 +869,67 @@ window.__ModuleLoader__.load({
       return { ...state, reload: () => setNonce((value) => value + 1) };
     }
 
+    // ---------- 歌词解析 ----------
+
+    const LRC_STAMP = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+
+    function parseLrc(text) {
+      const lines = [];
+      if (!text) return lines;
+      for (const raw of String(text).split(/\r?\n/)) {
+        LRC_STAMP.lastIndex = 0;
+        const stamps = [];
+        let match;
+        while ((match = LRC_STAMP.exec(raw)) !== null) {
+          const minutes = Number(match[1]);
+          const seconds = Number(match[2]);
+          const fraction = match[3] ? Number((match[3] + '000').slice(0, 3)) / 1000 : 0;
+          stamps.push(minutes * 60 + seconds + fraction);
+        }
+        if (stamps.length === 0) continue;
+        const content = raw.replace(LRC_STAMP, '').trim();
+        if (!content) continue;
+        for (const time of stamps) lines.push({ time, text: content });
+      }
+      lines.sort((a, b) => a.time - b.time);
+      return lines;
+    }
+
+    // 把翻译歌词按时间挂到原文行上：行数一致时按顺序配对，否则就近匹配。
+    function attachTranslation(lines, translatedLines) {
+      if (!translatedLines || translatedLines.length === 0) return lines;
+      const sameLength = translatedLines.length === lines.length;
+      return lines.map((line, index) => {
+        let translation = '';
+        if (sameLength && translatedLines[index]) {
+          translation = translatedLines[index].text;
+        } else {
+          for (const candidate of translatedLines) {
+            if (candidate.time > line.time + 0.6) break;
+            if (candidate.time >= line.time - 0.6) {
+              translation = candidate.text;
+              break;
+            }
+          }
+        }
+        return translation && translation !== line.text ? { ...line, translation } : line;
+      });
+    }
+
+    const lyricCache = new Map();
+
+    function useLyric(trackId) {
+      return useAsync(async () => {
+        if (!trackId) return { lines: [] };
+        if (lyricCache.has(trackId)) return lyricCache.get(trackId);
+        const data = await rpc('lyric', { id: trackId });
+        const result = { lines: attachTranslation(parseLrc(data?.lrc?.lyric), parseLrc(data?.tlyric?.lyric)) };
+        lyricCache.set(trackId, result);
+        if (lyricCache.size > 40) lyricCache.delete(lyricCache.keys().next().value);
+        return result;
+      }, [trackId]);
+    }
+
     // ---------- 通用组件 ----------
 
     function Loading({ label }) {
@@ -868,7 +973,7 @@ window.__ModuleLoader__.load({
             h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, track.name),
             isVip ? h('span', { className: 'dnm-vip' }, 'VIP') : null,
           ),
-          h('div', { className: 'dnm-row-artist' }, artistText(track)),
+          h('div', { className: 'dnm-row-artist' }, artistText(track, t)),
         ),
         h('div', { className: 'dnm-row-album' }, track.album || ''),
         h('div', { className: 'dnm-row-duration' }, formatDuration(track.duration)),
@@ -1309,9 +1414,132 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ---------- 正在播放（歌词 / 播放队列） ----------
+
+    function NowPlayingView({ t, onBack }) {
+      const state = usePlayerState();
+      const [tab, setTab] = useState('lyric');
+      const track = state.track;
+      const lyric = useLyric(track ? track.id : null);
+      const lines = (lyric.data && lyric.data.lines) || [];
+      const [activeIndex, setActiveIndex] = useState(-1);
+      const lyricBoxRef = useRef(null);
+
+      useEffect(() => {
+        if (lines.length === 0) {
+          if (activeIndex !== -1) setActiveIndex(-1);
+          return;
+        }
+        let index = -1;
+        for (let i = 0; i < lines.length; i += 1) {
+          if (lines[i].time <= state.currentTime + 0.15) index = i;
+          else break;
+        }
+        if (index !== activeIndex) setActiveIndex(index);
+      }, [lines, state.currentTime, activeIndex]);
+
+      useEffect(() => {
+        const box = lyricBoxRef.current;
+        if (!box || activeIndex < 0) return;
+        const line = box.querySelector('[data-active="1"]');
+        if (!line) return;
+        const target = Math.max(0, line.offsetTop - box.clientHeight / 2 + line.offsetHeight / 2);
+        if (typeof box.scrollTo === 'function') box.scrollTo({ top: target, behavior: 'smooth' });
+        else box.scrollTop = target;
+      }, [activeIndex, tab]);
+
+      const left = h(
+        'div',
+        { className: 'dnm-np-left' },
+        h(Cover, { url: track ? track.coverUrl : '', className: 'dnm-np-cover', alt: t('coverAlt') }),
+        h('h2', { className: 'dnm-np-name' }, track ? track.name : t('nowPlaying')),
+        h('p', { className: 'dnm-np-artist' }, track ? artistText(track, t) : ''),
+        track && track.album ? h('p', { className: 'dnm-np-album', title: track.album }, track.album) : null,
+      );
+
+      let right;
+      if (tab === 'queue') {
+        const queue = state.queue || [];
+        right =
+          queue.length === 0
+            ? h('div', { className: 'dnm-lyrics-empty' }, t('queueEmpty'))
+            : h(
+                'div',
+                { className: 'dnm-np-queue' },
+                queue.map((item, index) =>
+                  h(TrackRow, {
+                    key: String(item.id) + '-' + index,
+                    t,
+                    track: item,
+                    index,
+                    playing: Boolean(track && track.id === item.id),
+                    onPlay: () => sharedPlayer.playTrack(item, { queue, index }),
+                  }),
+                ),
+              );
+      } else if (lyric.status === 'loading') {
+        right = h('div', { className: 'dnm-lyrics-empty' }, t('lyricLoading'));
+      } else if (lyric.status === 'error') {
+        right = h('div', { className: 'dnm-lyrics-empty' }, t('loadFailed'));
+      } else if (lines.length === 0) {
+        right = h('div', { className: 'dnm-lyrics-empty' }, t('noLyric'));
+      } else {
+        right = h(
+          'div',
+          { className: 'dnm-lyrics', ref: lyricBoxRef },
+          lines.map((line, index) =>
+            h(
+              'div',
+              {
+                key: index,
+                className: 'dnm-lyric-line' + (index === activeIndex ? ' active' : ''),
+                'data-active': index === activeIndex ? '1' : '0',
+                role: 'button',
+                tabIndex: 0,
+                title: t('play'),
+                onClick: () => sharedPlayer.seek(line.time),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') sharedPlayer.seek(line.time);
+                },
+              },
+              line.text,
+              line.translation ? h('span', { className: 'dnm-lyric-trans' }, line.translation) : null,
+            ),
+          ),
+        );
+      }
+
+      return h(
+        'section',
+        { className: 'dnm-np', 'aria-label': t('nowPlayingPage') },
+        h(
+          'header',
+          { className: 'dnm-np-head' },
+          h('button', { type: 'button', className: 'dnm-icon-btn', title: t('back'), onClick: onBack }, h(IconBack, { size: 16 })),
+          h('span', { className: 'dnm-np-titlebar' }, track ? track.name : t('nowPlayingPage')),
+          state.error ? h('span', { className: 'dnm-status error', title: state.error }, state.error) : null,
+          h(
+            'div',
+            { className: 'dnm-np-tabs' },
+            h(
+              'button',
+              { type: 'button', className: 'dnm-np-tab' + (tab === 'lyric' ? ' active' : ''), onClick: () => setTab('lyric') },
+              t('lyrics'),
+            ),
+            h(
+              'button',
+              { type: 'button', className: 'dnm-np-tab' + (tab === 'queue' ? ' active' : ''), onClick: () => setTab('queue') },
+              t('queue') + ' (' + (state.queue.length || 0) + ')',
+            ),
+          ),
+        ),
+        h('div', { className: 'dnm-np-body' }, left, h('div', { className: 'dnm-np-right' }, right)),
+      );
+    }
+
     // ---------- 播放条 ----------
 
-    function PlayerBar({ t }) {
+    function PlayerBar({ t, onOpenNowPlaying }) {
       const state = usePlayerState();
       const track = state.track;
       const duration = state.duration || (track ? track.duration / 1000 : 0);
@@ -1323,13 +1551,25 @@ window.__ModuleLoader__.load({
         { className: 'dnm-player' },
         h(
           'div',
-          { className: 'dnm-player-left' },
+          {
+            className: 'dnm-player-left',
+            role: 'button',
+            tabIndex: track ? 0 : -1,
+            title: t('nowPlayingPage'),
+            style: { cursor: track ? 'pointer' : 'default' },
+            onClick: () => {
+              if (track && onOpenNowPlaying) onOpenNowPlaying();
+            },
+            onKeyDown: (event) => {
+              if (track && onOpenNowPlaying && event.key === 'Enter') onOpenNowPlaying();
+            },
+          },
           h(Cover, { url: track ? track.coverUrl : '', className: 'dnm-player-cover' }),
           h(
             'div',
             { className: 'dnm-player-meta' },
             h('div', { className: 'dnm-player-title' }, track ? track.name : t('nowPlaying')),
-            h('div', { className: 'dnm-player-artist' }, track ? artistText(track) : ''),
+            h('div', { className: 'dnm-player-artist' }, track ? artistText(track, t) : ''),
           ),
         ),
         h(
@@ -1393,11 +1633,13 @@ window.__ModuleLoader__.load({
               {
                 type: 'button',
                 className: 'dnm-icon-btn',
-                title: t('queue'),
-                onClick: () => sharedPlayer.next(),
-                style: { visibility: 'hidden' },
+                title: t('lyrics'),
+                disabled: !track,
+                onClick: () => {
+                  if (onOpenNowPlaying) onOpenNowPlaying();
+                },
               },
-              null,
+              h(IconLyric, { size: 15 }),
             ),
           ),
           h(
@@ -1868,6 +2110,7 @@ window.__ModuleLoader__.load({
 
     function AudioHost() {
       const audioRef = useRef(null);
+      const state = usePlayerState();
       useEffect(() => {
         const audio = audioRef.current;
         if (audio) sharedPlayer.bindAudio(audio);
@@ -1875,6 +2118,76 @@ window.__ModuleLoader__.load({
           sharedPlayer.bindAudio(null);
         };
       }, []);
+
+      // 系统媒体控制：Windows 媒体键 / 任务栏媒体浮层会显示当前歌曲
+      useEffect(() => {
+        if (typeof navigator === 'undefined' || !navigator.mediaSession) return undefined;
+        const media = navigator.mediaSession;
+        const track = state.track;
+        try {
+          if (!track) {
+            media.metadata = null;
+          } else if (typeof window !== 'undefined' && typeof window.MediaMetadata === 'function') {
+            media.metadata = new window.MediaMetadata({
+              title: track.name,
+              artist: artistText(track),
+              album: track.album || '',
+              artwork: track.coverUrl ? [{ src: track.coverUrl, sizes: '300x300', type: 'image/jpeg' }] : [],
+            });
+          }
+          media.playbackState = state.playing ? 'playing' : 'paused';
+        } catch {
+          /* 媒体会话只是增强，失败不影响播放 */
+        }
+        return undefined;
+      }, [state.track, state.playing]);
+
+      useEffect(() => {
+        if (typeof navigator === 'undefined' || !navigator.mediaSession) return undefined;
+        const media = navigator.mediaSession;
+        const handlers = {
+          play: () => sharedPlayer.toggle(),
+          pause: () => sharedPlayer.toggle(),
+          previoustrack: () => sharedPlayer.previous(),
+          nexttrack: () => sharedPlayer.next(),
+          seekto: (details) => {
+            if (details && typeof details.seekTime === 'number') sharedPlayer.seek(details.seekTime);
+          },
+        };
+        for (const name of Object.keys(handlers)) {
+          try {
+            media.setActionHandler(name, handlers[name]);
+          } catch {
+            /* 个别动作在部分系统不受支持 */
+          }
+        }
+        return () => {
+          for (const name of Object.keys(handlers)) {
+            try {
+              media.setActionHandler(name, null);
+            } catch {
+              /* 忽略 */
+            }
+          }
+        };
+      }, []);
+
+      // 面板内空格键播放/暂停：输入框和按钮聚焦时不拦截
+      useEffect(() => {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+        const onKeyDown = (event) => {
+          if (event.key !== ' ' && event.code !== 'Space') return;
+          const target = event.target;
+          const tag = target && target.tagName ? String(target.tagName).toLowerCase() : '';
+          if (tag === 'input' || tag === 'textarea' || tag === 'select' || (target && target.isContentEditable)) return;
+          if (!document.querySelector('.dnm-root')) return;
+          event.preventDefault();
+          sharedPlayer.toggle();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, []);
+
       return h('audio', {
         ref: audioRef,
         preload: 'auto',
@@ -1888,6 +2201,7 @@ window.__ModuleLoader__.load({
     function NeteaseMusicPage(props) {
       const t = props.t;
       const [view, setView] = useState('discover');
+      const [prevView, setPrevView] = useState('discover');
       const [playlistId, setPlaylistId] = useState(null);
       const [keyword, setKeyword] = useState('');
       const [searchInput, setSearchInput] = useState('');
@@ -1910,6 +2224,11 @@ window.__ModuleLoader__.load({
         setKeyword(value);
         setView('search');
       }, []);
+
+      const openNowPlaying = useCallback(() => {
+        if (view !== 'nowplaying') setPrevView(view);
+        setView('nowplaying');
+      }, [view]);
 
       const navItems = [
         { key: 'discover', label: t('tabDiscover'), icon: h(IconMusic, { size: 15 }) },
@@ -2036,9 +2355,15 @@ window.__ModuleLoader__.load({
                 )
               : null,
           ),
-          h('div', { className: 'dnm-main' }, h('div', { className: 'dnm-scroll dnm-scroll' }, content)),
+          h(
+            'div',
+            { className: 'dnm-main' },
+            view === 'nowplaying'
+              ? h(NowPlayingView, { t, onBack: () => setView(prevView) })
+              : h('div', { className: 'dnm-scroll' }, content),
+          ),
         ),
-        h(PlayerBar, { t }),
+        h(PlayerBar, { t, onOpenNowPlaying: openNowPlaying }),
         loginOpen
           ? h(LoginDialog, {
               t,
