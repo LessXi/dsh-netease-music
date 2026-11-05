@@ -193,6 +193,11 @@ const ALLOWED_APIS = {
       total: true,
     }),
   },
+  searchHot: {
+    method: 'POST',
+    path: '/weapi/search/hot',
+    payload: () => ({ type: 1111 }),
+  },
   songDetail: {
     method: 'POST',
     path: '/weapi/v3/song/detail',

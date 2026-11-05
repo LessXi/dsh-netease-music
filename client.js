@@ -116,6 +116,9 @@ window.__ModuleLoader__.load({
       recent: '最近播放',
       recentEmpty: '还没有播放记录',
       clearHistory: '清空记录',
+      searchHistory: '搜索历史',
+      hotSearch: '热门搜索',
+      clear: '清空',
       comments: '评论',
       hotComments: '热门评论',
       noComments: '还没有评论',
@@ -241,6 +244,9 @@ window.__ModuleLoader__.load({
       recent: 'Recently played',
       recentEmpty: 'Nothing played yet',
       clearHistory: 'Clear history',
+      searchHistory: 'Search history',
+      hotSearch: 'Trending',
+      clear: 'Clear',
       comments: 'Comments',
       hotComments: 'Hot comments',
       noComments: 'No comments yet',
@@ -438,6 +444,18 @@ window.__ModuleLoader__.load({
 .dnm-entry-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dnm-entry-arrow{color:var(--dsw-alias-label-tertiary);font-size:18px;line-height:1}
 .dnm-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.dnm-search-home{max-width:620px}
+.dnm-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.dnm-chip{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;padding:5px 12px;border-radius:999px;cursor:pointer;transition:color .15s,border-color .15s}
+.dnm-chip:hover{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
+.dnm-link{border:0;background:none;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer;padding:0}
+.dnm-link:hover{color:var(--dsw-alias-brand-primary)}
+.dnm-hot{display:flex;flex-direction:column;gap:1px}
+.dnm-hot-hint{font-size:13px;color:var(--dsw-alias-label-tertiary);padding:6px 0}
+.dnm-hot-item{display:flex;align-items:center;gap:12px;border:0;background:none;color:var(--dsw-alias-label-primary);padding:7px 8px;border-radius:8px;cursor:pointer;text-align:left;font-size:13px;transition:background .15s}
+.dnm-hot-item:hover{background:var(--dsw-alias-bg-layer-1)}
+.dnm-hot-rank{width:20px;flex:0 0 auto;text-align:center;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dnm-hot-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dnm-section-head .dnm-h2{margin:0}
 .dnm-row-action:disabled,.dnm-icon-btn:disabled{opacity:.35;cursor:default}
 .dnm-row-like.liked{color:var(--dsw-alias-brand-primary)}
@@ -1652,6 +1670,42 @@ window.__ModuleLoader__.load({
 
     // ---------- 视图：搜索 ----------
 
+    const SEARCH_HISTORY_KEY = 'dsh-netease-music:search-history';
+    const SEARCH_HISTORY_LIMIT = 10;
+
+    const searchHistory = (() => {
+      function read() {
+        try {
+          const raw = window.localStorage.getItem(SEARCH_HISTORY_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(parsed)) return [];
+          return parsed
+            .filter((item) => typeof item === 'string' && item.trim())
+            .slice(0, SEARCH_HISTORY_LIMIT);
+        } catch {
+          return [];
+        }
+      }
+      function persist(items) {
+        try {
+          window.localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(items));
+        } catch {
+          /* 存储不可用时忽略，不影响搜索 */
+        }
+      }
+      return {
+        read,
+        record(keyword) {
+          const text = String(keyword || '').trim();
+          if (!text) return;
+          persist([text, ...read().filter((item) => item !== text)].slice(0, SEARCH_HISTORY_LIMIT));
+        },
+        clear() {
+          persist([]);
+        },
+      };
+    })();
+
     const SEARCH_TYPES = [
       { key: 'songs', label: 'searchSongs', type: 1 },
       { key: 'artists', label: 'searchArtists', type: 100 },
@@ -1681,10 +1735,77 @@ window.__ModuleLoader__.load({
       const currentId = playerState.track ? playerState.track.id : null;
       const data = result.data;
       const items = data ? data[type] || [] : [];
+      const [history, setHistory] = useState(() => searchHistory.read());
+      useEffect(() => {
+        setHistory(searchHistory.read());
+      }, [keyword]);
+      const hot = useAsync(async () => {
+        if (keyword) return [];
+        const payload = await rpc('searchHot');
+        const list = payload?.result?.hots ?? [];
+        return list.map((item) => item?.first).filter((item) => typeof item === 'string' && item);
+      }, [keyword]);
+      const pickKeyword = (value) => {
+        setInput(value);
+        onSearch(value);
+      };
 
       let body;
       if (!keyword) {
-        body = h(Empty, { label: t('searchPlaceholder') });
+        const hotWords = hot.data || [];
+        body = h(
+          'div',
+          { className: 'dnm-search-home' },
+          history.length > 0
+            ? h(
+                'div',
+                null,
+                h(
+                  'div',
+                  { className: 'dnm-section-head' },
+                  h('span', null, t('searchHistory')),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dnm-link',
+                      onClick: () => {
+                        searchHistory.clear();
+                        setHistory([]);
+                      },
+                    },
+                    t('clear'),
+                  ),
+                ),
+                h(
+                  'div',
+                  { className: 'dnm-chips' },
+                  history.map((word) =>
+                    h(
+                      'button',
+                      { type: 'button', key: word, className: 'dnm-chip', onClick: () => pickKeyword(word) },
+                      word,
+                    ),
+                  ),
+                ),
+              )
+            : null,
+          h('div', { className: 'dnm-section-head' }, h('span', null, t('hotSearch'))),
+          hot.status === 'loading'
+            ? h('div', { className: 'dnm-hot-hint' }, t('loading'))
+            : h(
+                'div',
+                { className: 'dnm-hot' },
+                hotWords.map((word, index) =>
+                  h(
+                    'button',
+                    { type: 'button', key: word, className: 'dnm-hot-item', onClick: () => pickKeyword(word) },
+                    h('span', { className: 'dnm-hot-rank' }, String(index + 1)),
+                    h('span', { className: 'dnm-hot-name' }, word),
+                  ),
+                ),
+              ),
+        );
       } else if (result.status === 'loading') {
         body = h(Loading, { label: t('loading') });
       } else if (result.status === 'error') {
@@ -3431,6 +3552,7 @@ window.__ModuleLoader__.load({
       const openSearch = useCallback((value) => {
         setKeyword(value);
         setView('search');
+        if (value) searchHistory.record(value);
       }, []);
 
       const openNowPlaying = useCallback(() => {
