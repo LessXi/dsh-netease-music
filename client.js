@@ -87,6 +87,12 @@ window.__ModuleLoader__.load({
       account: '账号',
       nowPlayingPage: '正在播放',
       lyrics: '歌词',
+      lyricTranslation: '翻译',
+      lyricFont: '歌词字号',
+      lyricSizeSmall: '小',
+      lyricSizeNormal: '中',
+      lyricSizeLarge: '大',
+      dislike: '不喜欢',
       noLyric: '纯音乐，请欣赏',
       lyricLoading: '歌词加载中…',
       queueEmpty: '播放队列是空的',
@@ -120,6 +126,7 @@ window.__ModuleLoader__.load({
       hotSearch: '热门搜索',
       clear: '清空',
       quality: '音质',
+      volume: '音量',
       qualityStandard: '标准',
       qualityHigher: '较高',
       qualityExhigh: '极高',
@@ -223,6 +230,12 @@ window.__ModuleLoader__.load({
       account: 'Account',
       nowPlayingPage: 'Now playing',
       lyrics: 'Lyrics',
+      lyricTranslation: 'Translation',
+      lyricFont: 'Lyric size',
+      lyricSizeSmall: 'Small',
+      lyricSizeNormal: 'Medium',
+      lyricSizeLarge: 'Large',
+      dislike: 'Not interested',
       noLyric: 'Instrumental — enjoy',
       lyricLoading: 'Loading lyrics…',
       queueEmpty: 'The queue is empty',
@@ -256,6 +269,7 @@ window.__ModuleLoader__.load({
       hotSearch: 'Trending',
       clear: 'Clear',
       quality: 'Quality',
+      volume: 'Volume',
       qualityStandard: 'Standard',
       qualityHigher: 'Higher',
       qualityExhigh: 'High',
@@ -395,6 +409,7 @@ window.__ModuleLoader__.load({
 .dnm-range::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:var(--dsw-alias-brand-primary);border:0}
 .dnm-player-right{display:flex;align-items:center;gap:10px;width:230px;flex:0 0 auto;justify-content:flex-end}
 .dnm-volume{width:80px;flex:0 0 auto}
+.dnm-volume-wrap{display:flex;align-items:center;gap:6px;flex:0 0 auto;cursor:ns-resize}
 .dnm-status{font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;text-align:center}
 .dnm-status.error{color:var(--dsw-alias-state-error-primary)}
 .dnm-modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -428,6 +443,12 @@ window.__ModuleLoader__.load({
 .dnm-np-head{display:flex;align-items:center;gap:10px;padding:12px 18px 4px;flex:0 0 auto}
 .dnm-np-titlebar{font-size:13px;color:var(--dsw-alias-label-secondary);margin-right:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dnm-np-tabs{display:flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;flex:0 0 auto}
+.dnm-np-tools{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.dnm-np-tool{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer;transition:color .15s,background .15s}
+.dnm-np-tool:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
+.dnm-np-tool.on{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
+.dnm-np[data-lyric-size="small"] .dnm-lyric-line{font-size:13px}
+.dnm-np[data-lyric-size="large"] .dnm-lyric-line{font-size:18px}
 .dnm-np-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1;padding:6px 13px;border-radius:7px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .dnm-np-tab.active{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-weight:600}
 .dnm-np-body{flex:1 1 auto;min-height:0;display:flex;gap:clamp(20px,4vw,44px);padding:12px clamp(18px,4vw,44px) 20px;overflow:hidden}
@@ -1418,6 +1439,32 @@ window.__ModuleLoader__.load({
 
     // ---------- 通用组件 ----------
 
+    const LYRIC_SETTINGS_KEY = 'dsh-netease-music:lyric-settings';
+    const LYRIC_SIZES = ['small', 'normal', 'large'];
+
+    function readLyricSettings() {
+      const fallback = { translation: true, size: 'normal' };
+      try {
+        const raw = window.localStorage.getItem(LYRIC_SETTINGS_KEY);
+        if (!raw) return fallback;
+        const parsed = JSON.parse(raw);
+        return {
+          translation: parsed && typeof parsed.translation === 'boolean' ? parsed.translation : true,
+          size: parsed && LYRIC_SIZES.includes(parsed.size) ? parsed.size : 'normal',
+        };
+      } catch {
+        return fallback;
+      }
+    }
+
+    function saveLyricSettings(settings) {
+      try {
+        window.localStorage.setItem(LYRIC_SETTINGS_KEY, JSON.stringify(settings));
+      } catch {
+        /* 存储不可用时只在本次会话生效 */
+      }
+    }
+
     function Loading({ label }) {
       return h('div', { className: 'dnm-empty' }, h('div', { className: 'dnm-spinner' }), h('span', null, label || '加载中…'));
     }
@@ -1435,7 +1482,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function TrackRow({ track, index, playing, onPlay, t, onRemove }) {
+    function TrackRow({ track, index, playing, onPlay, t, onRemove, onDislike }) {
       const isVip = track.fee === 1 || track.fee === 4;
       const session = useSession();
       const likedIds = useLikedIds();
@@ -1499,6 +1546,21 @@ window.__ModuleLoader__.load({
           },
           h(IconPlay, { size: 13 }),
         ),
+        onDislike
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'dnm-row-action',
+                title: t('dislike'),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  onDislike();
+                },
+              },
+              svgIcon(13, 'M5 11h14v2H5z'),
+            )
+          : null,
         onRemove
           ? h(
               'button',
@@ -2486,6 +2548,13 @@ window.__ModuleLoader__.load({
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
       const tracks = fm.data || [];
+      const [hiddenIds, setHiddenIds] = useState([]);
+      const visibleTracks = tracks.filter((track) => !hiddenIds.includes(track.id));
+      const dislike = (track) => {
+        setHiddenIds((prev) => (prev.includes(track.id) ? prev : prev.concat([track.id])));
+        void rpc('fmDislike', { id: track.id }).catch(() => undefined);
+        if (playerState.track && playerState.track.id === track.id) sharedPlayer.next();
+      };
       if (!state.loggedIn) {
         return h('div', { className: 'dnm-content' }, h('h1', { className: 'dnm-h1' }, t('navRadio')), h(LoginRequired, { t, onLogin }));
       }
@@ -2502,8 +2571,8 @@ window.__ModuleLoader__.load({
             {
               type: 'button',
               className: 'dnm-btn primary',
-              disabled: tracks.length === 0,
-              onClick: () => sharedPlayer.playQueue(tracks, 0),
+              disabled: visibleTracks.length === 0,
+              onClick: () => sharedPlayer.playQueue(visibleTracks, 0),
             },
             h(IconPlay, { size: 14 }),
             t('playAll'),
@@ -2519,16 +2588,17 @@ window.__ModuleLoader__.load({
           ? h(Loading, { label: t('loading') })
           : fm.status === 'error'
             ? h(ErrorBox, { message: fm.error, onRetry: fm.reload, retryLabel: t('retry') })
-            : tracks.length === 0
+            : visibleTracks.length === 0
               ? h(Empty, { label: t('radioEmpty') })
-              : tracks.map((track, index) =>
+              : visibleTracks.map((track, index) =>
                   h(TrackRow, {
                     key: track.id + '-' + index,
                     track,
                     index,
                     playing: currentId === track.id,
                     t,
-                    onPlay: () => sharedPlayer.playQueue(tracks, index),
+                    onPlay: () => sharedPlayer.playQueue(visibleTracks, index),
+                    onDislike: () => dislike(track),
                   }),
                 ),
       );
@@ -2913,6 +2983,19 @@ window.__ModuleLoader__.load({
       const lines = (lyric.data && lyric.data.lines) || [];
       const [activeIndex, setActiveIndex] = useState(-1);
       const lyricBoxRef = useRef(null);
+      const [lyricOptions, setLyricOptions] = useState(readLyricSettings);
+
+      const updateLyricOptions = (next) => {
+        setLyricOptions(next);
+        saveLyricSettings(next);
+      };
+      const toggleTranslation = () => updateLyricOptions({ ...lyricOptions, translation: !lyricOptions.translation });
+      const cycleLyricSize = () => {
+        const index = LYRIC_SIZES.indexOf(lyricOptions.size);
+        updateLyricOptions({ ...lyricOptions, size: LYRIC_SIZES[(index + 1) % LYRIC_SIZES.length] });
+      };
+      const hasTranslation = lines.some((line) => Boolean(line.translation));
+      const sizeLabel = { small: t('lyricSizeSmall'), normal: t('lyricSizeNormal'), large: t('lyricSizeLarge') }[lyricOptions.size] || t('lyricSizeNormal');
 
       useEffect(() => {
         if (lines.length === 0) {
@@ -3010,7 +3093,7 @@ window.__ModuleLoader__.load({
                 },
               },
               line.text,
-              line.translation ? h('span', { className: 'dnm-lyric-trans' }, line.translation) : null,
+              line.translation && lyricOptions.translation ? h('span', { className: 'dnm-lyric-trans' }, line.translation) : null,
             ),
           ),
         );
@@ -3018,13 +3101,38 @@ window.__ModuleLoader__.load({
 
       return h(
         'section',
-        { className: 'dnm-np', 'aria-label': t('nowPlayingPage') },
+        { className: 'dnm-np', 'aria-label': t('nowPlayingPage'), 'data-lyric-size': lyricOptions.size },
         h(
           'header',
           { className: 'dnm-np-head' },
           h('button', { type: 'button', className: 'dnm-icon-btn', title: t('back'), onClick: onBack }, h(IconBack, { size: 16 })),
           h('span', { className: 'dnm-np-titlebar' }, track ? track.name : t('nowPlayingPage')),
           state.error ? h('span', { className: 'dnm-status error', title: state.error }, state.error) : null,
+          h(
+            'div',
+            { className: 'dnm-np-tools' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dnm-np-tool' + (lyricOptions.translation ? ' on' : ''),
+                title: t('lyricTranslation'),
+                disabled: !hasTranslation,
+                onClick: toggleTranslation,
+              },
+              t('lyricTranslation'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dnm-np-tool',
+                title: t('lyricFont') + '：' + sizeLabel,
+                onClick: cycleLyricSize,
+              },
+              'A ' + sizeLabel,
+            ),
+          ),
           h(
             'div',
             { className: 'dnm-np-tabs' },
@@ -3104,7 +3212,25 @@ window.__ModuleLoader__.load({
               state.mode === 'shuffle'
                 ? svgIcon(14, 'M17 3l4 4-4 4V8h-3.2l-2.6 3-1.4-1.6L12.6 6H17V3zM3 6h5.4l2.4 2.8-1.4 1.6L7.8 8H3V6zm14 8v-3l4 4-4 4v-3h-4.4l-2.3-2.7 1.4-1.6L13.8 14H17zM3 18v-2h4.8l2.1-2.4 1.4 1.6L8.4 18H3z')
                 : state.mode === 'single'
-                  ? svgIcon(14, 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z')
+                  ? svgIcon(14, null, {
+                      children: [
+                        h('path', { d: 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z' }),
+                        h(
+                          'text',
+                          {
+                            x: '12',
+                            y: '15.5',
+                            textAnchor: 'middle',
+                            fontSize: '9',
+                            fontWeight: '600',
+                            fill: 'currentColor',
+                            stroke: 'none',
+                            style: { fontFamily: 'inherit' },
+                          },
+                          '1',
+                        ),
+                      ],
+                    })
                   : svgIcon(14, 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z'),
             ),
             h(
@@ -3213,16 +3339,28 @@ window.__ModuleLoader__.load({
             },
             t(QUALITY_LABELS[state.quality]),
           ),
-          h(IconVolume, { size: 15 }),
-          h('input', {
-            className: 'dnm-range dnm-volume',
-            type: 'range',
-            min: 0,
-            max: 1,
-            step: 0.01,
-            value: state.volume,
-            onChange: (event) => sharedPlayer.setVolume(Number(event.target.value)),
-          }),
+          h(
+            'div',
+            {
+              className: 'dnm-volume-wrap',
+              title: t('volume') + '：' + Math.round(state.volume * 100) + '%',
+              onWheel: (event) => {
+                event.preventDefault();
+                const step = event.deltaY > 0 ? -0.05 : 0.05;
+                sharedPlayer.setVolume(Math.round((state.volume + step) * 100) / 100);
+              },
+            },
+            h(IconVolume, { size: 15 }),
+            h('input', {
+              className: 'dnm-range dnm-volume',
+              type: 'range',
+              min: 0,
+              max: 1,
+              step: 0.01,
+              value: state.volume,
+              onChange: (event) => sharedPlayer.setVolume(Number(event.target.value)),
+            }),
+          ),
         ),
       );
     }
