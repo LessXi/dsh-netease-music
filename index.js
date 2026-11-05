@@ -288,6 +288,16 @@ const ALLOWED_APIS = {
     },
     query: () => ({}),
   },
+  artistAlbums: {
+    // 歌手专辑列表，老接口返回 hotAlbums 与 more
+    method: 'GET',
+    path: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌手 id 不合法');
+      return '/api/artist/albums/' + id;
+    },
+    query: (p) => ({ limit: clampInt(p.limit, 1, 100, 50), offset: clampInt(p.offset, 0, 10000, 0) }),
+  },
   albumDetail: {
     method: 'POST',
     path: (p) => {

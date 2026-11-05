@@ -132,6 +132,7 @@ window.__ModuleLoader__.load({
       subscribed: '已收藏',
       tracksTab: '曲目',
       commentsTab: '评论',
+      albumsTab: '专辑',
       expand: '展开',
       collapse: '收起',
       updatedAt: '更新于 {n}',
@@ -254,6 +255,7 @@ window.__ModuleLoader__.load({
       subscribed: 'Subscribed',
       tracksTab: 'Tracks',
       commentsTab: 'Comments',
+      albumsTab: 'Albums',
       expand: 'Expand',
       collapse: 'Collapse',
       updatedAt: 'updated {n}',
@@ -1752,7 +1754,45 @@ window.__ModuleLoader__.load({
 
     // ---------- 视图：歌手 ----------
 
-    function ArtistView({ t, artistId, onBack }) {
+    function ArtistAlbums({ t, artistId, onOpenAlbum }) {
+      const albums = useAsync(async () => {
+        const data = await rpc('artistAlbums', { id: artistId, limit: 100, offset: 0 });
+        const list = Array.isArray(data?.hotAlbums) ? data.hotAlbums : [];
+        return list.map((album) => ({
+          id: album.id,
+          name: album.name,
+          picUrl: album.picUrl || '',
+          publishTime: Number(album.publishTime) || 0,
+          size: Number(album.size) || 0,
+          type: album.type || '',
+        }));
+      }, [artistId]);
+      if (albums.status === 'loading') return h(Loading, { label: t('loading') });
+      if (albums.status === 'error') return h(ErrorBox, { message: albums.error, onRetry: albums.reload, retryLabel: t('retry') });
+      const list = albums.data || [];
+      if (list.length === 0) return h(Empty, { label: t('empty') });
+      return h(
+        'div',
+        { className: 'dnm-grid' },
+        list.map((album) =>
+          h(
+            'button',
+            { type: 'button', key: album.id, className: 'dnm-card', onClick: () => onOpenAlbum(album.id) },
+            h(Cover, { url: album.picUrl, className: 'dnm-cover', alt: album.name }),
+            h('div', { className: 'dnm-card-name' }, album.name),
+            h(
+              'div',
+              { className: 'dnm-card-sub' },
+              [album.publishTime ? new Date(album.publishTime).toLocaleDateString() : '', album.size ? album.size + recordSuffix(t) : '']
+                .filter(Boolean)
+                .join(' · '),
+            ),
+          ),
+        ),
+      );
+    }
+
+    function ArtistView({ t, artistId, onBack, onOpenAlbum }) {
       const detail = useAsync(async () => {
         const data = await rpc('artistDetail', { id: artistId });
         const artist = data?.artist;
@@ -1768,6 +1808,7 @@ window.__ModuleLoader__.load({
         };
       }, [artistId]);
       const playerState = usePlayerState();
+      const [tab, setTab] = useState('songs');
       const currentId = playerState.track ? playerState.track.id : null;
       const artist = detail.data;
       return h(
@@ -1818,23 +1859,38 @@ window.__ModuleLoader__.load({
                     ),
                   ),
                 ),
-                artist.hotSongs.length === 0
-                  ? h(Empty, { label: t('empty') })
-                  : h(
-                      'div',
-                      null,
-                      h('h2', { className: 'dnm-h2' }, t('hotSongs')),
-                      artist.hotSongs.map((track, index) =>
-                        h(TrackRow, {
-                          key: track.id + '-' + index,
-                          track,
-                          index,
-                          playing: currentId === track.id,
-                          t,
-                          onPlay: () => sharedPlayer.playQueue(artist.hotSongs, index),
-                        }),
+                h(
+                  'div',
+                  { className: 'dnm-tabs' },
+                  h(
+                    'button',
+                    { type: 'button', className: 'dnm-tab' + (tab === 'songs' ? ' active' : ''), onClick: () => setTab('songs') },
+                    t('hotSongs'),
+                  ),
+                  h(
+                    'button',
+                    { type: 'button', className: 'dnm-tab' + (tab === 'albums' ? ' active' : ''), onClick: () => setTab('albums') },
+                    t('albumsTab') + (artist.albumSize ? ' (' + artist.albumSize + ')' : ''),
+                  ),
+                ),
+                tab === 'albums'
+                  ? h(ArtistAlbums, { t, artistId, onOpenAlbum })
+                  : artist.hotSongs.length === 0
+                    ? h(Empty, { label: t('empty') })
+                    : h(
+                        'div',
+                        null,
+                        artist.hotSongs.map((track, index) =>
+                          h(TrackRow, {
+                            key: track.id + '-' + index,
+                            track,
+                            index,
+                            playing: currentId === track.id,
+                            t,
+                            onPlay: () => sharedPlayer.playQueue(artist.hotSongs, index),
+                          }),
+                        ),
                       ),
-                    ),
               ),
       );
     }
@@ -3252,6 +3308,7 @@ window.__ModuleLoader__.load({
       const [playlistId, setPlaylistId] = useState(null);
       const [artistId, setArtistId] = useState(null);
       const [albumId, setAlbumId] = useState(null);
+      const [albumFrom, setAlbumFrom] = useState('search');
       const [keyword, setKeyword] = useState('');
       const [searchInput, setSearchInput] = useState('');
       const [loginOpen, setLoginOpen] = useState(false);
@@ -3280,8 +3337,9 @@ window.__ModuleLoader__.load({
 
       const openAlbum = useCallback((id) => {
         setAlbumId(id);
+        setAlbumFrom(view === 'artist' ? 'artist' : 'search');
         setView('album');
-      }, []);
+      }, [view]);
 
       const openSearch = useCallback((value) => {
         setKeyword(value);
@@ -3320,9 +3378,9 @@ window.__ModuleLoader__.load({
           onOpenAlbum: openAlbum,
         });
       } else if (view === 'artist' && artistId) {
-        content = h(ArtistView, { t, artistId, onBack: () => setView('search') });
+        content = h(ArtistView, { t, artistId, onBack: () => setView('search'), onOpenAlbum: openAlbum });
       } else if (view === 'album' && albumId) {
-        content = h(AlbumView, { t, albumId, onBack: () => setView('search') });
+        content = h(AlbumView, { t, albumId, onBack: () => setView(albumFrom) });
       } else if (view === 'likes') {
         content = h(LikesView, { t, onBack: () => setView('mine'), onLogin: () => setLoginOpen(true) });
       } else if (view === 'mine') {
