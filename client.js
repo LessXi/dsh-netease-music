@@ -133,6 +133,8 @@ window.__ModuleLoader__.load({
       tracksTab: '曲目',
       commentsTab: '评论',
       albumsTab: '专辑',
+      removeFromQueue: '从队列移除',
+      clearQueue: '清空队列',
       expand: '展开',
       collapse: '收起',
       updatedAt: '更新于 {n}',
@@ -256,6 +258,8 @@ window.__ModuleLoader__.load({
       tracksTab: 'Tracks',
       commentsTab: 'Comments',
       albumsTab: 'Albums',
+      removeFromQueue: 'Remove from queue',
+      clearQueue: 'Clear queue',
       expand: 'Expand',
       collapse: 'Collapse',
       updatedAt: 'updated {n}',
@@ -410,6 +414,8 @@ window.__ModuleLoader__.load({
 .dnm-lyric-trans{display:block;font-size:12px;font-weight:400;color:var(--dsw-alias-label-tertiary);margin-top:2px}
 .dnm-lyrics-empty{flex:1 1 auto;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary);font-size:13px;padding:40px 0}
 .dnm-np-queue{flex:1 1 auto;min-height:0;overflow:auto;padding:4px 0 48px;scrollbar-gutter:stable}
+.dnm-np-queue-wrap{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.dnm-np-queue-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 8px;font-size:12px;color:var(--dsw-alias-label-secondary);flex:0 0 auto}
 .dnm-tabs{display:inline-flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;margin-bottom:18px}
 .dnm-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .dnm-tab:hover{color:var(--dsw-alias-label-primary)}
@@ -738,6 +744,49 @@ window.__ModuleLoader__.load({
         void playTrack(queue[index], { queue, index });
       }
 
+      function removeFromQueue(targetIndex) {
+        const index = Number(targetIndex);
+        const queue = state.queue;
+        if (!Number.isInteger(index) || index < 0 || index >= queue.length) return;
+        const nextQueue = queue.filter((_, position) => position !== index);
+        if (nextQueue.length === 0) {
+          clearQueue();
+          return;
+        }
+        if (index === state.index) {
+          // 删掉正在播的那首：接着播它后面的歌（末尾则回到第一首）
+          const target = Math.min(index, nextQueue.length - 1);
+          void playTrack(nextQueue[target], { queue: nextQueue, index: target });
+          return;
+        }
+        patch({ queue: nextQueue, index: index < state.index ? state.index - 1 : state.index });
+      }
+
+      function clearQueue() {
+        const audio = state.audio;
+        playToken += 1;
+        if (audio) {
+          try {
+            audio.pause();
+            audio.removeAttribute('src');
+            audio.load();
+          } catch {
+            /* 卸载失败不影响状态清理 */
+          }
+        }
+        patch({
+          queue: [],
+          index: -1,
+          track: null,
+          playing: false,
+          loading: false,
+          currentTime: 0,
+          duration: 0,
+          url: '',
+          error: '',
+        });
+      }
+
       function setPanelVisible(visible) {
         if (state.panelVisible === visible) return;
         patch({ panelVisible: visible });
@@ -756,6 +805,8 @@ window.__ModuleLoader__.load({
         bindAudio,
         playTrack,
         playQueue,
+        removeFromQueue,
+        clearQueue,
         toggle,
         next,
         previous,
@@ -1018,6 +1069,11 @@ window.__ModuleLoader__.load({
           h('path', { key: 'b', d: 'M18 13v5M18 13l2.2-.5v4.6', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' }),
         ],
       });
+    const IconClose = ({ size = 12 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [h('path', { key: 'a', d: 'M6 6l12 12M18 6L6 18', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' })],
+      });
 
     // 侧边栏图标：云朵 + 音符。颜色跟随侧边栏文字色，选中态由侧边栏自己渲染。
     function NeteaseIcon({ size = 20, active = false }) {
@@ -1198,7 +1254,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function TrackRow({ track, index, playing, onPlay, t }) {
+    function TrackRow({ track, index, playing, onPlay, t, onRemove }) {
       const isVip = track.fee === 1 || track.fee === 4;
       const session = useSession();
       const likedIds = useLikedIds();
@@ -1257,6 +1313,21 @@ window.__ModuleLoader__.load({
           },
           h(IconPlay, { size: 13 }),
         ),
+        onRemove
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'dnm-row-action',
+                title: t('removeFromQueue'),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  onRemove();
+                },
+              },
+              h(IconClose, { size: 12 }),
+            )
+          : null,
       );
     }
 
@@ -2547,16 +2618,32 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'dnm-lyrics-empty' }, t('queueEmpty'))
             : h(
                 'div',
-                { className: 'dnm-np-queue' },
-                queue.map((item, index) =>
-                  h(TrackRow, {
-                    key: String(item.id) + '-' + index,
-                    t,
-                    track: item,
-                    index,
-                    playing: Boolean(track && track.id === item.id),
-                    onPlay: () => sharedPlayer.playTrack(item, { queue, index }),
-                  }),
+                { className: 'dnm-np-queue-wrap' },
+                h(
+                  'div',
+                  { className: 'dnm-np-queue-head' },
+                  h('span', null, queue.length + recordSuffix(t)),
+                  h(
+                    'button',
+                    { type: 'button', className: 'dnm-btn', onClick: () => sharedPlayer.clearQueue() },
+                    h(IconClose, { size: 12 }),
+                    t('clearQueue'),
+                  ),
+                ),
+                h(
+                  'div',
+                  { className: 'dnm-np-queue' },
+                  queue.map((item, index) =>
+                    h(TrackRow, {
+                      key: String(item.id) + '-' + index,
+                      t,
+                      track: item,
+                      index,
+                      playing: Boolean(track && track.id === item.id),
+                      onPlay: () => sharedPlayer.playTrack(item, { queue, index }),
+                      onRemove: () => sharedPlayer.removeFromQueue(index),
+                    }),
+                  ),
                 ),
               );
       } else if (lyric.status === 'loading') {
