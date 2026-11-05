@@ -91,6 +91,14 @@ window.__ModuleLoader__.load({
       lyricLoading: '歌词加载中…',
       queueEmpty: '播放队列是空的',
       coverAlt: '封面',
+      searchSongs: '单曲',
+      searchArtists: '歌手',
+      searchAlbums: '专辑',
+      searchPlaylists: '歌单',
+      hotSongs: '热门歌曲',
+      released: '发行',
+      artistAlbums: '张专辑',
+      artistSongs: '首单曲',
     };
 
     const en = {
@@ -169,6 +177,14 @@ window.__ModuleLoader__.load({
       lyricLoading: 'Loading lyrics…',
       queueEmpty: 'The queue is empty',
       coverAlt: 'Cover',
+      searchSongs: 'Songs',
+      searchArtists: 'Artists',
+      searchAlbums: 'Albums',
+      searchPlaylists: 'Playlists',
+      hotSongs: 'Popular songs',
+      released: 'Released',
+      artistAlbums: 'albums',
+      artistSongs: 'songs',
     };
 
     // ---------- 样式 ----------
@@ -312,7 +328,22 @@ window.__ModuleLoader__.load({
 .dnm-lyric-trans{display:block;font-size:12px;font-weight:400;color:var(--dsw-alias-label-tertiary);margin-top:2px}
 .dnm-lyrics-empty{flex:1 1 auto;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary);font-size:13px;padding:40px 0}
 .dnm-np-queue{flex:1 1 auto;min-height:0;overflow:auto;padding:4px 0 48px;scrollbar-gutter:stable}
-@media (max-width:760px){.dnm-np-left{display:none}}
+.dnm-tabs{display:inline-flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;margin-bottom:18px}
+.dnm-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.dnm-tab:hover{color:var(--dsw-alias-label-primary)}
+.dnm-tab.active{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.dnm-card-sub{font-size:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-card-round .dnm-cover{border-radius:50%}
+.dnm-artist-head{display:flex;gap:22px;margin-bottom:24px;align-items:flex-start}
+.dnm-artist-avatar{width:132px;height:132px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:var(--dsw-alias-bg-layer-2);box-shadow:0 8px 26px rgba(0,0,0,.2)}
+.dnm-artist-title{font-size:26px;font-weight:600;margin:0 0 8px}
+.dnm-artist-meta{font-size:13px;color:var(--dsw-alias-label-secondary);margin:0 0 8px}
+.dnm-artist-desc{font-size:13px;color:var(--dsw-alias-label-tertiary);margin:0 0 14px;max-width:640px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.dnm-album-head{display:flex;gap:22px;margin-bottom:24px;align-items:flex-start}
+.dnm-album-cover{width:180px;height:180px;border-radius:12px;object-fit:cover;flex:0 0 auto;background:var(--dsw-alias-bg-layer-2);box-shadow:0 10px 30px rgba(0,0,0,.22)}
+.dnm-album-title{font-size:24px;font-weight:600;margin:0 0 8px}
+.dnm-album-meta{font-size:13px;color:var(--dsw-alias-label-secondary);margin:0 0 6px}
+@media (max-width:760px){.dnm-np-left{display:none}.dnm-artist-head,.dnm-album-head{flex-direction:column}.dnm-artist-avatar{width:96px;height:96px}.dnm-album-cover{width:130px;height:130px}}
     `;
 
     function ensureCss() {
@@ -1230,24 +1261,127 @@ window.__ModuleLoader__.load({
 
     // ---------- 视图：搜索 ----------
 
-    function SearchView({ t, keyword, onSearch }) {
+    const SEARCH_TYPES = [
+      { key: 'songs', label: 'searchSongs', type: 1 },
+      { key: 'artists', label: 'searchArtists', type: 100 },
+      { key: 'albums', label: 'searchAlbums', type: 10 },
+      { key: 'playlists', label: 'searchPlaylists', type: 1000 },
+    ];
+
+    function SearchView({ t, keyword, onSearch, onOpenPlaylist, onOpenArtist, onOpenAlbum }) {
       const [input, setInput] = useState(keyword || '');
-      const result = useAsync(async () => {
-        if (!keyword) return { songs: [], playlists: [] };
-        const [songData, playlistData] = await Promise.all([
-          rpc('search', { q: keyword, type: 1, limit: 50 }),
-          rpc('search', { q: keyword, type: 1000, limit: 6 }).catch(() => null),
-        ]);
-        return {
-          songs: normalizeTracks(songData?.result?.songs),
-          playlists: Array.isArray(playlistData?.result?.playlists) ? playlistData.result.playlists : [],
-        };
-      }, [keyword]);
+      const [type, setType] = useState('songs');
       useEffect(() => {
         setInput(keyword || '');
       }, [keyword]);
+      const result = useAsync(async () => {
+        if (!keyword) return null;
+        const kind = SEARCH_TYPES.find((item) => item.key === type) || SEARCH_TYPES[0];
+        const data = await rpc('search', { q: keyword, type: kind.type, limit: kind.key === 'playlists' ? 30 : 50 });
+        const payload = data?.result ?? {};
+        return {
+          songs: normalizeTracks(payload.songs),
+          artists: Array.isArray(payload.artists) ? payload.artists : [],
+          albums: Array.isArray(payload.albums) ? payload.albums : [],
+          playlists: Array.isArray(payload.playlists) ? payload.playlists : [],
+        };
+      }, [keyword, type]);
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
+      const data = result.data;
+      const items = data ? data[type] || [] : [];
+
+      let body;
+      if (!keyword) {
+        body = h(Empty, { label: t('searchPlaceholder') });
+      } else if (result.status === 'loading') {
+        body = h(Loading, { label: t('loading') });
+      } else if (result.status === 'error') {
+        body = h(ErrorBox, { message: result.error, onRetry: result.reload, retryLabel: t('retry') });
+      } else if (items.length === 0) {
+        body = h(Empty, { label: t('noResult') });
+      } else if (type === 'songs') {
+        body = h(
+          'div',
+          null,
+          data.songs.map((track, index) =>
+            h(TrackRow, {
+              key: track.id + '-' + index,
+              track,
+              index,
+              playing: currentId === track.id,
+              t,
+              onPlay: () => sharedPlayer.playQueue(data.songs, index),
+            }),
+          ),
+        );
+      } else if (type === 'artists') {
+        body = h(
+          'div',
+          { className: 'dnm-grid' },
+          data.artists.map((artist) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                key: artist.id,
+                className: 'dnm-card dnm-card-round',
+                onClick: () => onOpenArtist(artist.id),
+              },
+              h('div', { className: 'dnm-cover' }, h(Cover, { url: artist.picUrl || artist.img1v1Url, className: 'dnm-cover-img', alt: artist.name })),
+              h('div', { className: 'dnm-card-title' }, artist.name),
+              h('div', { className: 'dnm-card-sub' }, artist.musicSize != null ? artist.musicSize + ' ' + t('artistSongs') : ''),
+            ),
+          ),
+        );
+      } else if (type === 'albums') {
+        body = h(
+          'div',
+          { className: 'dnm-grid' },
+          data.albums.map((album) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                key: album.id,
+                className: 'dnm-card',
+                onClick: () => onOpenAlbum(album.id),
+              },
+              h('div', { className: 'dnm-cover' }, h(Cover, { url: album.picUrl, className: 'dnm-cover-img', alt: album.name })),
+              h('div', { className: 'dnm-card-title' }, album.name),
+              h(
+                'div',
+                { className: 'dnm-card-sub' },
+                [(album.artist && album.artist.name) || '', album.size ? album.size + ' ' + t('songCount') : ''].filter(Boolean).join(' · '),
+              ),
+            ),
+          ),
+        );
+      } else {
+        body = h(
+          'div',
+          { className: 'dnm-grid' },
+          data.playlists.map((playlist) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                key: playlist.id,
+                className: 'dnm-card',
+                onClick: () => onOpenPlaylist(playlist.id),
+              },
+              h(
+                'div',
+                { className: 'dnm-cover' },
+                h(Cover, { url: playlist.picUrl || playlist.coverImgUrl, className: 'dnm-cover-img', alt: playlist.name }),
+                h('span', { className: 'dnm-cover-count' }, h(IconPlay, { size: 10 }), formatCount(playlist.playCount)),
+              ),
+              h('div', { className: 'dnm-card-title' }, playlist.name),
+            ),
+          ),
+        );
+      }
+
       return h(
         'div',
         { className: 'dnm-content' },
@@ -1256,7 +1390,7 @@ window.__ModuleLoader__.load({
           'div',
           {
             className: 'dnm-search',
-            style: { maxWidth: 480, marginBottom: 20 },
+            style: { maxWidth: 480, marginBottom: 16 },
           },
           h(IconSearch, { size: 15 }),
           h('input', {
@@ -1278,29 +1412,199 @@ window.__ModuleLoader__.load({
             t('search'),
           ),
         ),
-        !keyword
-          ? h(Empty, { label: t('searchPlaceholder') })
-          : result.status === 'loading'
-            ? h(Loading, { label: t('loading') })
-            : result.status === 'error'
-              ? h(ErrorBox, { message: result.error, onRetry: result.reload, retryLabel: t('retry') })
-              : result.data.songs.length === 0
-                ? h(Empty, { label: t('noResult') })
-                : h(
+        h(
+          'div',
+          { className: 'dnm-tabs' },
+          SEARCH_TYPES.map((item) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                key: item.key,
+                className: 'dnm-tab' + (type === item.key ? ' active' : ''),
+                onClick: () => setType(item.key),
+              },
+              t(item.label),
+            ),
+          ),
+        ),
+        body,
+      );
+    }
+
+    // ---------- 视图：歌手 ----------
+
+    function ArtistView({ t, artistId, onBack }) {
+      const detail = useAsync(async () => {
+        const data = await rpc('artistDetail', { id: artistId });
+        const artist = data?.artist;
+        if (!artist) throw new Error('歌手不存在或已下架');
+        return {
+          id: artist.id,
+          name: artist.name,
+          picUrl: artist.picUrl || artist.img1v1Url || '',
+          briefDesc: artist.briefDesc || '',
+          albumSize: artist.albumSize || 0,
+          musicSize: artist.musicSize || 0,
+          hotSongs: normalizeTracks(data.hotSongs),
+        };
+      }, [artistId]);
+      const playerState = usePlayerState();
+      const currentId = playerState.track ? playerState.track.id : null;
+      const artist = detail.data;
+      return h(
+        'div',
+        { className: 'dnm-content' },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 } },
+          h('button', { type: 'button', className: 'dnm-btn', onClick: onBack }, h(IconBack, { size: 13 }), t('back')),
+        ),
+        detail.status === 'loading'
+          ? h(Loading, { label: t('loading') })
+          : detail.status === 'error'
+            ? h(ErrorBox, { message: detail.error, onRetry: detail.reload, retryLabel: t('retry') })
+            : h(
+                React.Fragment,
+                null,
+                h(
+                  'div',
+                  { className: 'dnm-artist-head' },
+                  h(Cover, { url: artist.picUrl, className: 'dnm-artist-avatar', alt: artist.name }),
+                  h(
                     'div',
                     null,
-                    h('h2', { className: 'dnm-h2' }, t('search')),
-                    result.data.songs.map((track, index) =>
-                      h(TrackRow, {
-                        key: track.id + '-' + index,
-                        track,
-                        index,
-                        playing: currentId === track.id,
-                        t,
-                        onPlay: () => sharedPlayer.playQueue(result.data.songs, index),
-                      }),
+                    h('h1', { className: 'dnm-artist-title' }, artist.name),
+                    h(
+                      'p',
+                      { className: 'dnm-artist-meta' },
+                      [artist.musicSize ? artist.musicSize + ' ' + t('artistSongs') : '', artist.albumSize ? artist.albumSize + ' ' + t('artistAlbums') : '']
+                        .filter(Boolean)
+                        .join(' · '),
+                    ),
+                    artist.briefDesc ? h('p', { className: 'dnm-artist-desc' }, artist.briefDesc) : null,
+                    h(
+                      'div',
+                      { className: 'dnm-actions' },
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dnm-btn primary',
+                          disabled: artist.hotSongs.length === 0,
+                          onClick: () => sharedPlayer.playQueue(artist.hotSongs, 0),
+                        },
+                        h(IconPlay, { size: 14 }),
+                        t('playAll'),
+                      ),
                     ),
                   ),
+                ),
+                artist.hotSongs.length === 0
+                  ? h(Empty, { label: t('empty') })
+                  : h(
+                      'div',
+                      null,
+                      h('h2', { className: 'dnm-h2' }, t('hotSongs')),
+                      artist.hotSongs.map((track, index) =>
+                        h(TrackRow, {
+                          key: track.id + '-' + index,
+                          track,
+                          index,
+                          playing: currentId === track.id,
+                          t,
+                          onPlay: () => sharedPlayer.playQueue(artist.hotSongs, index),
+                        }),
+                      ),
+                    ),
+              ),
+      );
+    }
+
+    // ---------- 视图：专辑 ----------
+
+    function AlbumView({ t, albumId, onBack }) {
+      const detail = useAsync(async () => {
+        const data = await rpc('albumDetail', { id: albumId });
+        const album = data?.album;
+        if (!album) throw new Error('专辑不存在或已下架');
+        return {
+          id: album.id,
+          name: album.name,
+          coverUrl: album.picUrl || '',
+          artistName: (album.artist && album.artist.name) || '',
+          publishTime: album.publishTime || 0,
+          description: album.description || '',
+          songs: normalizeTracks(data.songs),
+        };
+      }, [albumId]);
+      const playerState = usePlayerState();
+      const currentId = playerState.track ? playerState.track.id : null;
+      const album = detail.data;
+      const released = album && album.publishTime ? new Date(album.publishTime).toLocaleDateString() : '';
+      return h(
+        'div',
+        { className: 'dnm-content' },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 } },
+          h('button', { type: 'button', className: 'dnm-btn', onClick: onBack }, h(IconBack, { size: 13 }), t('back')),
+        ),
+        detail.status === 'loading'
+          ? h(Loading, { label: t('loading') })
+          : detail.status === 'error'
+            ? h(ErrorBox, { message: detail.error, onRetry: detail.reload, retryLabel: t('retry') })
+            : h(
+                React.Fragment,
+                null,
+                h(
+                  'div',
+                  { className: 'dnm-album-head' },
+                  h(Cover, { url: album.coverUrl, className: 'dnm-album-cover', alt: album.name }),
+                  h(
+                    'div',
+                    null,
+                    h('h1', { className: 'dnm-album-title' }, album.name),
+                    h(
+                      'p',
+                      { className: 'dnm-album-meta' },
+                      [album.artistName, released ? t('released') + ' ' + released : ''].filter(Boolean).join(' · '),
+                    ),
+                    album.songs.length ? h('p', { className: 'dnm-artist-meta' }, album.songs.length + ' ' + t('songCount')) : null,
+                    h(
+                      'div',
+                      { className: 'dnm-actions' },
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dnm-btn primary',
+                          disabled: album.songs.length === 0,
+                          onClick: () => sharedPlayer.playQueue(album.songs, 0),
+                        },
+                        h(IconPlay, { size: 14 }),
+                        t('playAll'),
+                      ),
+                    ),
+                  ),
+                ),
+                album.songs.length === 0
+                  ? h(Empty, { label: t('empty') })
+                  : h(
+                      'div',
+                      null,
+                      album.songs.map((track, index) =>
+                        h(TrackRow, {
+                          key: track.id + '-' + index,
+                          track,
+                          index,
+                          playing: currentId === track.id,
+                          t,
+                          onPlay: () => sharedPlayer.playQueue(album.songs, index),
+                        }),
+                      ),
+                    ),
+              ),
       );
     }
 
@@ -2203,6 +2507,8 @@ window.__ModuleLoader__.load({
       const [view, setView] = useState('discover');
       const [prevView, setPrevView] = useState('discover');
       const [playlistId, setPlaylistId] = useState(null);
+      const [artistId, setArtistId] = useState(null);
+      const [albumId, setAlbumId] = useState(null);
       const [keyword, setKeyword] = useState('');
       const [searchInput, setSearchInput] = useState('');
       const [loginOpen, setLoginOpen] = useState(false);
@@ -2218,6 +2524,16 @@ window.__ModuleLoader__.load({
       const openPlaylist = useCallback((id) => {
         setPlaylistId(id);
         setView('playlist');
+      }, []);
+
+      const openArtist = useCallback((id) => {
+        setArtistId(id);
+        setView('artist');
+      }, []);
+
+      const openAlbum = useCallback((id) => {
+        setAlbumId(id);
+        setView('album');
       }, []);
 
       const openSearch = useCallback((value) => {
@@ -2242,7 +2558,18 @@ window.__ModuleLoader__.load({
       } else if (view === 'toplist') {
         content = h(ToplistView, { t, onOpenPlaylist: openPlaylist });
       } else if (view === 'search') {
-        content = h(SearchView, { t, keyword, onSearch: openSearch });
+        content = h(SearchView, {
+          t,
+          keyword,
+          onSearch: openSearch,
+          onOpenPlaylist: openPlaylist,
+          onOpenArtist: openArtist,
+          onOpenAlbum: openAlbum,
+        });
+      } else if (view === 'artist' && artistId) {
+        content = h(ArtistView, { t, artistId, onBack: () => setView('search') });
+      } else if (view === 'album' && albumId) {
+        content = h(AlbumView, { t, albumId, onBack: () => setView('search') });
       } else if (view === 'mine') {
         content = h(MineView, {
           t,
@@ -2330,7 +2657,10 @@ window.__ModuleLoader__.load({
                   type: 'button',
                   key: item.key,
                   className:
-                    'dnm-nav-item' + (view === item.key || (view === 'playlist' && item.key === 'discover') ? ' active' : ''),
+                    'dnm-nav-item' +
+                      (view === item.key || (['playlist', 'artist', 'album', 'search'].includes(view) && item.key === 'discover')
+                        ? ' active'
+                        : ''),
                   onClick: () => {
                     if (item.key === 'discover') setPlaylistId(null);
                     setView(item.key);

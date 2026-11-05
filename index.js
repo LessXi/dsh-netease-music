@@ -256,6 +256,25 @@ const ALLOWED_APIS = {
     path: '/api/v1/resource/comments/R_SO_4_0',
     query: (p) => ({ rid: normalizeId(p.id), limit: clampInt(p.limit, 1, 50, 20), offset: clampInt(p.offset, 0, 10000, 0) }),
   },
+  artistDetail: {
+    // 老接口一次返回歌手信息 + 热门 50 首（hotSongs）
+    method: 'GET',
+    path: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌手 id 不合法');
+      return '/api/artist/' + id;
+    },
+    query: () => ({}),
+  },
+  albumDetail: {
+    method: 'POST',
+    path: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('专辑 id 不合法');
+      return '/weapi/v1/album/' + id;
+    },
+    payload: () => ({}),
+  },
 };
 
 function clampInt(value, min, max, fallback) {
@@ -461,8 +480,10 @@ export function apply(ctx) {
                 return;
               }
               const params = body?.params && typeof body.params === 'object' ? body.params : {};
+              // path 允许是函数（如 /api/artist/<id> 这种把 id 写进路径的接口）。
+              const path = typeof spec.path === 'function' ? spec.path(params) : spec.path;
               const { status, json } = await neteaseFetch(
-                { method: spec.method, path: spec.path, query: spec.query?.(params), payload: spec.payload?.(params) },
+                { method: spec.method, path, query: spec.query?.(params), payload: spec.payload?.(params) },
                 jar,
               );
               sendJson(res, 200, { ok: true, status, data: json });
