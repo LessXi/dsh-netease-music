@@ -591,6 +591,24 @@ window.__ModuleLoader__.load({
 @keyframes dnm-fade-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 .dnm-scroll>*{animation:dnm-fade-in .26s cubic-bezier(.2,.8,.2,1) both}
 .dnm-np{animation:dnm-fade-in .26s cubic-bezier(.2,.8,.2,1) both}
+/* ---------- 浅色主题微调：加层次、边界与对比度 ---------- */
+body:not([data-ds-dark-theme]) .dnm-root{background:linear-gradient(180deg,#fbfbfd 0,#fff 240px)}
+body:not([data-ds-dark-theme]) .dnm-topbar{background:color-mix(in srgb,#fff 84%,transparent);box-shadow:0 1px 0 rgba(15,17,21,.07)}
+body:not([data-ds-dark-theme]) .dnm-player{background:color-mix(in srgb,#fff 90%,transparent);box-shadow:0 -1px 0 rgba(15,17,21,.08),0 -14px 32px rgba(15,17,21,.05)}
+body:not([data-ds-dark-theme]) .dnm-lyric-line{color:var(--dsw-alias-label-secondary)}
+body:not([data-ds-dark-theme]) .dnm-lyric-line.active{color:var(--dsw-alias-label-primary)}
+body:not([data-ds-dark-theme]) .dnm-np-bg-img{opacity:.3}
+body:not([data-ds-dark-theme]) .dnm-hero-bg-img{opacity:.26}
+body:not([data-ds-dark-theme]) .dnm-ambient-img{opacity:.22}
+body:not([data-ds-dark-theme]) .dnm-cover{box-shadow:inset 0 0 0 .5px rgba(15,17,21,.08),0 1px 2px rgba(15,17,21,.06)}
+body:not([data-ds-dark-theme]) .dnm-card:hover .dnm-cover{box-shadow:0 20px 36px -18px rgba(15,17,21,.3),0 1px 2px rgba(15,17,21,.06)}
+body:not([data-ds-dark-theme]) .dnm-row:hover{background:rgba(15,17,21,.035)}
+body:not([data-ds-dark-theme]) .dnm-chart:hover{background:rgba(15,17,21,.035)}
+body:not([data-ds-dark-theme]) .dnm-menu{box-shadow:0 10px 30px -10px rgba(15,17,21,.25),0 0 0 .5px rgba(15,17,21,.06)}
+body:not([data-ds-dark-theme]) .dnm-modal{box-shadow:0 26px 62px -24px rgba(15,17,21,.3),0 0 0 .5px rgba(15,17,21,.06)}
+body:not([data-ds-dark-theme]) .dnm-tabs{background:rgba(15,17,21,.05)}
+body:not([data-ds-dark-theme]) .dnm-tab.active{background:#fff;box-shadow:0 1px 2px rgba(15,17,21,.1)}
+body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,17,21,.1)}
     `;
 
     function ensureCss() {
