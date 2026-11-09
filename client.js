@@ -165,6 +165,16 @@ window.__ModuleLoader__.load({
       copyLink: '复制歌曲链接',
       linkCopied: '已复制歌曲链接',
       copyFailed: '复制失败，请手动复制',
+      songInfo: '歌曲信息',
+      infoAlbum: '专辑',
+      infoDuration: '时长',
+      infoQuality: '音质',
+      infoBitrate: '码率',
+      infoSize: '大小',
+      infoFileType: '格式',
+      infoId: '歌曲 ID',
+      infoLoading: '正在读取播放文件信息…',
+      infoUnavailable: '暂无可用播放文件（可能需要登录或会员）',
       selectPlaylist: '选择歌单',
       noPlaylists: '还没有创建歌单',
       addedToPlaylist: '已收藏到「{name}」',
@@ -349,6 +359,16 @@ window.__ModuleLoader__.load({
       copyLink: 'Copy song link',
       linkCopied: 'Song link copied',
       copyFailed: 'Copy failed, please copy manually',
+      songInfo: 'Song info',
+      infoAlbum: 'Album',
+      infoDuration: 'Duration',
+      infoQuality: 'Quality',
+      infoBitrate: 'Bitrate',
+      infoSize: 'Size',
+      infoFileType: 'Format',
+      infoId: 'Song ID',
+      infoLoading: 'Reading audio file info…',
+      infoUnavailable: 'No playable audio file (sign-in or membership may be required)',
       selectPlaylist: 'Choose a playlist',
       noPlaylists: 'You have no playlists yet',
       addedToPlaylist: 'Added to "{name}"',
@@ -514,6 +534,17 @@ window.__ModuleLoader__.load({
 .dnm-playlist-pick-count{font-size:11px;color:var(--dsw-alias-label-tertiary)}
 .dnm-playlist-pick-busy{color:var(--dsw-alias-label-secondary);font-size:12px}
 .dnm-playlist-done{font-size:12px;color:var(--dsw-alias-state-success-primary);text-align:left}
+.dnm-info{gap:14px}
+.dnm-info-head{display:flex;align-items:center;gap:12px}
+.dnm-info-cover{width:56px;height:56px;border-radius:10px;overflow:hidden;flex:0 0 auto;box-shadow:0 8px 20px -10px rgba(0,0,0,.5)}
+.dnm-info-title{flex:1 1 auto;min-width:0}
+.dnm-info-name{font-size:15px;font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-info-artist{font-size:12px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-info-rows{display:flex;flex-direction:column;border-top:.5px solid var(--dsw-alias-border-l1)}
+.dnm-info-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 2px;font-size:12.5px;border-bottom:.5px solid var(--dsw-alias-border-l1)}
+.dnm-info-key{color:var(--dsw-alias-label-tertiary);flex:0 0 auto}
+.dnm-info-value{color:var(--dsw-alias-label-primary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-info-hint{font-size:12px;color:var(--dsw-alias-label-tertiary);text-align:center}
 .dnm-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-icon-btn:disabled{opacity:.4;cursor:default;background:transparent}
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dnm-red);color:#fff;box-shadow:0 4px 14px -4px color-mix(in srgb,var(--dnm-red) 60%,transparent);transition:transform .18s,opacity .18s}
@@ -2211,6 +2242,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const menu = useContextMenu();
       const session = useSession();
       const [addingTrack, setAddingTrack] = useState(null);
+      const [infoTrack, setInfoTrack] = useState(null);
       useEffect(() => {
         if (!menu) return undefined;
         const onKey = (event) => {
@@ -2291,10 +2323,99 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 track.albumId && onOpenAlbum ? item(t('viewAlbum'), () => onOpenAlbum(track.albumId)) : null,
                 session.loggedIn ? item(t('addToPlaylist'), () => setAddingTrack(track)) : null,
                 item(t('copyLink'), () => void copyLink()),
+                item(t('songInfo'), () => setInfoTrack(track)),
               ),
             )
           : null,
         addingTrack ? h(AddToPlaylistDialog, { t, track: addingTrack, onClose: () => setAddingTrack(null) }) : null,
+        infoTrack ? h(SongInfoDialog, { t, track: infoTrack, onClose: () => setInfoTrack(null) }) : null,
+      );
+    }
+
+    // 歌曲信息：展示曲目元数据与当前音质下的播放文件信息
+    function SongInfoDialog({ t, track, onClose }) {
+      const state = usePlayerState();
+      const quality = state.quality || 'exhigh';
+      const info = useAsync(async () => {
+        const data = await rpc('songUrl', { ids: [track.id], level: quality });
+        const file = Array.isArray(data && data.data) ? data.data[0] : null;
+        if (!file || !file.url) return null;
+        return {
+          br: Number(file.br) || 0,
+          size: Number(file.size) || 0,
+          type: String(file.type || ''),
+          level: String(file.level || quality),
+        };
+      }, [track.id, quality]);
+      useEffect(() => {
+        const onKey = (event) => {
+          if (event.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [onClose]);
+      const file = info.data;
+      const sizeText = file && file.size > 0 ? (file.size / 1048576).toFixed(1) + ' MB' : '—';
+      const bitrateText = file && file.br > 0 ? Math.round(file.br / 1000) + ' kbps' : '—';
+      const qualityKey = QUALITY_LABELS[file ? file.level : quality] || 'qualityExhigh';
+      const formatText = file && file.type ? file.type.toUpperCase() : '—';
+      const rows = [
+        { key: 'album', label: t('infoAlbum'), value: track.album || '—' },
+        { key: 'duration', label: t('infoDuration'), value: formatDuration(track.duration) },
+        { key: 'quality', label: t('infoQuality'), value: t(qualityKey) },
+        { key: 'bitrate', label: t('infoBitrate'), value: bitrateText },
+        { key: 'size', label: t('infoSize'), value: sizeText },
+        { key: 'format', label: t('infoFileType'), value: formatText },
+        { key: 'id', label: t('infoId'), value: String(track.id) },
+      ];
+      return h(
+        'div',
+        { className: 'dnm-modal-mask', onClick: onClose },
+        h(
+          'div',
+          {
+            className: 'dnm-modal dnm-info',
+            style: { width: 420, alignItems: 'stretch' },
+            onClick: (event) => event.stopPropagation(),
+          },
+          h(
+            'div',
+            { className: 'dnm-info-head' },
+            h(
+              'div',
+              { className: 'dnm-info-cover' },
+              h(Cover, { url: track.coverUrl, className: 'dnm-cover-img', alt: t('coverAlt') }),
+            ),
+            h(
+              'div',
+              { className: 'dnm-info-title' },
+              h('div', { className: 'dnm-info-name' }, track.name),
+              h('div', { className: 'dnm-info-artist' }, artistText(track, t)),
+            ),
+            h(
+              'button',
+              { type: 'button', className: 'dnm-icon-btn', title: t('close'), onClick: onClose },
+              h(IconClose, { size: 13 }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'dnm-info-rows' },
+            rows.map((row) =>
+              h(
+                'div',
+                { key: row.key, className: 'dnm-info-row' },
+                h('span', { className: 'dnm-info-key' }, row.label),
+                h('span', { className: 'dnm-info-value' }, row.value),
+              ),
+            ),
+          ),
+          info.status === 'loading'
+            ? h('div', { className: 'dnm-info-hint' }, t('infoLoading'))
+            : !file
+              ? h('div', { className: 'dnm-info-hint' }, t('infoUnavailable'))
+              : null,
+        ),
       );
     }
 
