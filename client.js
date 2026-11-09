@@ -64,6 +64,7 @@ window.__ModuleLoader__.load({
       hotCharts: '热门榜单',
       allCharts: '全部榜单',
       playAll: '播放全部',
+      shuffle: '随机播放',
       play: '播放',
       playCount: '播放',
       songCount: '首',
@@ -247,6 +248,7 @@ window.__ModuleLoader__.load({
       hotCharts: 'Top charts',
       allCharts: 'All charts',
       playAll: 'Play all',
+      shuffle: 'Shuffle',
       play: 'Play',
       playCount: 'plays',
       songCount: 'songs',
@@ -1335,6 +1337,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       return player;
     })();
 
+    // 随机播放：原地打乱顺序后整体入队
+    function playShuffled(tracks) {
+      if (!Array.isArray(tracks) || tracks.length === 0) return;
+      const list = tracks.slice();
+      for (let i = list.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = list[i];
+        list[i] = list[j];
+        list[j] = tmp;
+      }
+      sharedPlayer.playQueue(list, 0);
+    }
+
     // ---------- 最近播放（本地记录） ----------
 
     const HISTORY_KEY = 'dsh-netease-music:history';
@@ -1627,6 +1642,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
     }
 
     const IconPlay = ({ size = 18 }) => svgIcon(size, 'M8 5v14l11-7z');
+    const IconShuffle = ({ size = 14 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [
+          h('path', {
+            d: 'M17 3h4v4M21 3l-6 6M3 21l6.5-6.5M17 21h4v-4M21 21l-6.5-6.5M3 3l6.5 6.5',
+            stroke: 'currentColor',
+            strokeWidth: 1.7,
+            strokeLinecap: 'round',
+            fill: 'none',
+          }),
+        ],
+      });
     const IconPause = ({ size = 18 }) => svgIcon(size, 'M6 5h4v14H6zM14 5h4v14h-4z');
     const IconPrev = ({ size = 16 }) =>
       svgIcon(size, 'M6 5h2v14H6zm12 0v14l-9-7z');
@@ -2751,6 +2779,18 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                         'button',
                         {
                           type: 'button',
+                          className: 'dnm-btn',
+                          disabled: playlist.tracks.length === 0,
+                          title: t('shuffle'),
+                          onClick: () => playShuffled(playlist.tracks),
+                        },
+                        h(IconShuffle, { size: 14 }),
+                        t('shuffle'),
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
                           className: 'dnm-btn' + (subscribed ? ' primary' : ''),
                           disabled: !session.loggedIn || subscribeBusy,
                           title: session.loggedIn ? '' : t('loginRequired'),
@@ -3393,6 +3433,18 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                         'button',
                         {
                           type: 'button',
+                          className: 'dnm-btn',
+                          disabled: artist.hotSongs.length === 0,
+                          title: t('shuffle'),
+                          onClick: () => playShuffled(artist.hotSongs),
+                        },
+                        h(IconShuffle, { size: 14 }),
+                        t('shuffle'),
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
                           className: 'dnm-btn' + (following ? ' on' : ''),
                           disabled: followBusy,
                           title: session.loggedIn ? undefined : t('followLoginHint'),
@@ -3548,6 +3600,18 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                         },
                         h(IconPlay, { size: 14 }),
                         t('playAll'),
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dnm-btn',
+                          disabled: album.songs.length === 0,
+                          title: t('shuffle'),
+                          onClick: () => playShuffled(album.songs),
+                        },
+                        h(IconShuffle, { size: 14 }),
+                        t('shuffle'),
                       ),
                       h(
                         'button',
@@ -3768,7 +3832,11 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       }, [uid], { cacheKey: uid ? 'likes:' + uid : undefined });
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
+      const [trackQuery, setTrackQuery] = useState('');
+      const [sortBy, setSortBy] = useState('default');
       const tracks = (likes.data && likes.data.tracks) || [];
+      const entries = tracks.map((track, index) => ({ track, index }));
+      const visibleTracks = sortTracks(filterTracks(entries, trackQuery, t), sortBy, t);
       const head = h(
         'div',
         { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 } },
@@ -3809,6 +3877,18 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 h(IconPlay, { size: 14 }),
                 t('playAll'),
               ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-btn',
+                  disabled: tracks.length === 0,
+                  title: t('shuffle'),
+                  onClick: () => playShuffled(tracks),
+                },
+                h(IconShuffle, { size: 14 }),
+                t('shuffle'),
+              ),
             ),
           ),
         ),
@@ -3818,15 +3898,30 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
             ? h(ErrorBox, { message: likes.error, onRetry: likes.reload, retryLabel: t('retry') })
             : tracks.length === 0
               ? h(Empty, { label: t('likesEmpty') })
-              : tracks.map((track, index) =>
-                  h(TrackRow, {
-                    key: track.id + '-' + index,
-                    track,
-                    index,
-                    playing: currentId === track.id,
+              : h(
+                  React.Fragment,
+                  null,
+                  h(TrackToolbar, {
                     t,
-                    onPlay: () => sharedPlayer.playQueue(tracks, index),
+                    query: trackQuery,
+                    onQuery: setTrackQuery,
+                    sortBy,
+                    onSort: setSortBy,
+                    count: visibleTracks.length,
+                    total: tracks.length,
                   }),
+                  visibleTracks.length === 0
+                    ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
+                    : visibleTracks.map(({ track, index }) =>
+                        h(TrackRow, {
+                          key: track.id + '-' + index,
+                          track,
+                          index,
+                          playing: currentId === track.id,
+                          t,
+                          onPlay: () => sharedPlayer.playQueue(tracks, index),
+                        }),
+                      ),
                 ),
       );
     }
