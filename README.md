@@ -109,6 +109,7 @@
 - **Client 端**（`client.js`）：`sidebar.panellist` + `main` 两个 slot，纯 React 组件渲染，样式只用 DSH 主题变量
 - **二维码**（`qr.js`）：自带纯 JS 二维码编码器，无第三方依赖
 - **自动登录**（`login-assistant.js`）：用本机 Chrome/Edge 的独立 profile 目录启动浏览器，通过 CDP 读取登录 Cookie 后关闭窗口
+- **登录过期提示**：登录凭证失效时面板顶部会出现一条提示，点右侧「重新登录」直接打开登录框，不用再猜为什么点了没反应
 - **播放器**：单例放在 `shell.overlay` 的隐藏 `<audio>` 上，切面板不中断；同时上报 `navigator.mediaSession`，支持系统媒体键
 
 所有代码是纯 JavaScript，没有构建步骤。

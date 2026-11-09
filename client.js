@@ -97,6 +97,8 @@ window.__ModuleLoader__.load({
       lyricLoading: '歌词加载中…',
       queueEmpty: '播放队列是空的',
       queueSearchPlaceholder: '搜索队列里的歌',
+      sessionExpired: '登录已过期，部分功能需要重新登录',
+      relogin: '重新登录',
       queueNoMatch: '没有匹配的歌曲',
       viewArtist: '查看歌手',
       viewAlbum: '查看专辑',
@@ -267,6 +269,8 @@ window.__ModuleLoader__.load({
       lyricLoading: 'Loading lyrics…',
       queueEmpty: 'The queue is empty',
       queueSearchPlaceholder: 'Search the queue',
+      sessionExpired: 'Login expired, some features need signing in again',
+      relogin: 'Sign in again',
       queueNoMatch: 'No matching songs',
       viewArtist: 'View artist',
       viewAlbum: 'View album',
@@ -554,6 +558,10 @@ window.__ModuleLoader__.load({
 .dnm-np-queue-wrap{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .dnm-np-queue-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 8px;font-size:12px;color:var(--dsw-alias-label-secondary);flex:0 0 auto}
 .dnm-queue-search{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary)}
+.dnm-banner{display:flex;align-items:center;gap:10px;flex:0 0 auto;padding:8px 20px;font-size:12px;color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,var(--dsw-alias-bg-base));border-bottom:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 34%,transparent)}
+.dnm-banner-text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-banner-action{flex:0 0 auto;height:26px;padding:0 12px;border-radius:13px;border:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,transparent);background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.dnm-banner-action:hover{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 18%,transparent)}
 .dnm-queue-search:focus-within{border-color:var(--dnm-red)}
 .dnm-queue-search input{flex:1 1 auto;min-width:0;border:0;outline:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
 .dnm-queue-search input::placeholder{color:var(--dsw-alias-label-tertiary)}
@@ -1454,7 +1462,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
     // ---------- 登录会话（模块级） ----------
 
     function createSession() {
-      let state = { status: 'idle', loggedIn: false, profile: null, error: '' };
+      let state = { status: 'idle', loggedIn: false, profile: null, expired: false, error: '' };
       const listeners = new Set();
       const emit = () => {
         for (const listener of listeners) listener();
@@ -1470,7 +1478,13 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           try {
             const json = await request('/status');
             if (json.ok) {
-              patch({ status: 'ready', loggedIn: Boolean(json.loggedIn), profile: json.profile ?? null, error: '' });
+              patch({
+                status: 'ready',
+                loggedIn: Boolean(json.loggedIn),
+                profile: json.profile ?? null,
+                expired: Boolean(json.expired),
+                error: '',
+              });
             } else {
               patch({ status: 'ready', error: json.error || '状态获取失败' });
             }
@@ -1488,7 +1502,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         } catch {
           /* 本地照样清状态 */
         }
-        patch({ loggedIn: false, profile: null });
+        patch({ loggedIn: false, profile: null, expired: false });
       }
       return {
         getSnapshot: () => state,
@@ -5109,6 +5123,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 t('login'),
               ),
         ),
+        state.expired
+          ? h(
+              'div',
+              { className: 'dnm-banner', role: 'status' },
+              h(IconUser, { size: 14 }),
+              h('span', { className: 'dnm-banner-text' }, t('sessionExpired')),
+              h(
+                'button',
+                { type: 'button', className: 'dnm-banner-action', onClick: () => setLoginOpen(true) },
+                t('relogin'),
+              ),
+            )
+          : null,
         h(
           'div',
           { className: 'dnm-body' },

@@ -620,8 +620,15 @@ export function apply(ctx) {
               return;
             }
             if (route === '/status' && req.method === 'GET') {
+              const hadSession = jar.hasLogin();
               const profile = await loadProfile(jar);
-              sendJson(res, 200, { ok: true, loggedIn: Boolean(profile), profile });
+              // Cookie 还在但拿不到账号信息，说明登录已经过期（网易云会让 MUSIC_U 失效）
+              sendJson(res, 200, {
+                ok: true,
+                loggedIn: Boolean(profile),
+                profile,
+                expired: hadSession && !profile,
+              });
               return;
             }
             if (route === '/login/cookie' && req.method === 'POST') {
