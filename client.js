@@ -96,6 +96,10 @@ window.__ModuleLoader__.load({
       noLyric: '纯音乐，请欣赏',
       lyricLoading: '歌词加载中…',
       queueEmpty: '播放队列是空的',
+      queueSearchPlaceholder: '搜索队列里的歌',
+      queueNoMatch: '没有匹配的歌曲',
+      viewArtist: '查看歌手',
+      viewAlbum: '查看专辑',
       coverAlt: '封面',
       searchSongs: '单曲',
       searchArtists: '歌手',
@@ -256,6 +260,10 @@ window.__ModuleLoader__.load({
       noLyric: 'Instrumental — enjoy',
       lyricLoading: 'Loading lyrics…',
       queueEmpty: 'The queue is empty',
+      queueSearchPlaceholder: 'Search the queue',
+      queueNoMatch: 'No matching songs',
+      viewArtist: 'View artist',
+      viewAlbum: 'View album',
       coverAlt: 'Cover',
       searchSongs: 'Songs',
       searchArtists: 'Artists',
@@ -531,6 +539,13 @@ window.__ModuleLoader__.load({
 .dnm-np-queue{flex:1 1 auto;min-height:0;overflow:auto;padding:4px 0 48px;scrollbar-gutter:stable}
 .dnm-np-queue-wrap{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .dnm-np-queue-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 8px;font-size:12px;color:var(--dsw-alias-label-secondary);flex:0 0 auto}
+.dnm-queue-search{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary)}
+.dnm-queue-search:focus-within{border-color:var(--dnm-red)}
+.dnm-queue-search input{flex:1 1 auto;min-width:0;border:0;outline:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
+.dnm-queue-search input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dnm-queue-search-clear{display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
+.dnm-np-link{display:inline;border:0;background:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.dnm-np-link:hover{color:var(--dsw-alias-label-primary);text-decoration:underline;text-underline-offset:2px}
 .dnm-tabs{display:inline-flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;margin-bottom:18px}
 .dnm-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .dnm-tab:hover{color:var(--dsw-alias-label-primary)}
@@ -737,9 +752,11 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const albumName = typeof raw.album === 'string' ? raw.album : (albumObject && albumObject.name) || '';
       const coverUrl = (albumObject && albumObject.picUrl) || raw.coverUrl || raw.picUrl || '';
       const alias = Array.isArray(raw.alia) && raw.alia.length > 0 ? raw.alia[0] : typeof raw.alias === 'string' ? raw.alias : '';
-      const artistIds = artistList
+      const objectArtistIds = artistList
         .map((artist) => (artist && typeof artist === 'object' && artist.id ? artist.id : null))
         .filter(Boolean);
+      // 幂等保护：已经归一化过的对象不会再有对象数组，沿用上一次提取的 id
+      const artistIds = objectArtistIds.length > 0 ? objectArtistIds : Array.isArray(raw.artistIds) ? raw.artistIds : [];
       const albumId = (albumObject && albumObject.id) || raw.albumId || null;
       return {
         id: raw.id,
@@ -3472,11 +3489,12 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
 
     // ---------- 正在播放（歌词 / 播放队列） ----------
 
-    function NowPlayingView({ t, onBack }) {
+    function NowPlayingView({ t, onBack, onOpenArtist, onOpenAlbum }) {
       const state = usePlayerState();
       const session = useSession();
       const likedIds = useLikedIds();
       const [tab, setTab] = useState('lyric');
+      const [queueQuery, setQueueQuery] = useState('');
       const track = state.track;
       const liked = track ? likedIds.has(track.id) : false;
       const lyric = useLyric(track ? track.id : null);
@@ -3525,8 +3543,38 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         { className: 'dnm-np-left' },
         h(Cover, { url: track ? track.coverUrl : '', className: 'dnm-np-cover', alt: t('coverAlt') }),
         h('h2', { className: 'dnm-np-name' }, track ? track.name : t('nowPlaying')),
-        h('p', { className: 'dnm-np-artist' }, track ? artistText(track, t) : ''),
-        track && track.album ? h('p', { className: 'dnm-np-album', title: track.album }, track.album) : null,
+        h(
+          'p',
+          { className: 'dnm-np-artist' },
+          track && track.artistIds && track.artistIds.length > 0
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-np-link',
+                  title: t('viewArtist'),
+                  onClick: () => onOpenArtist(track.artistIds[0]),
+                },
+                artistText(track, t),
+              )
+            : track
+              ? artistText(track, t)
+              : '',
+        ),
+        track && track.album
+          ? h(
+              track.albumId
+                ? 'button'
+                : 'p',
+              {
+                type: track.albumId ? 'button' : undefined,
+                className: track.albumId ? 'dnm-np-album dnm-np-link' : 'dnm-np-album',
+                title: track.albumId ? t('viewAlbum') : track.album,
+                onClick: track.albumId ? () => onOpenAlbum(track.albumId) : undefined,
+              },
+              track.album,
+            )
+          : null,
         track
           ? h(
               'div',
@@ -3613,6 +3661,16 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         right = h(CommentsPanel, { t, kind: 'song', id: track ? track.id : null });
       } else if (tab === 'queue') {
         const queue = state.queue || [];
+        const needle = queueQuery.trim().toLowerCase();
+        const indexed = queue.map((item, index) => ({ item, index }));
+        const visible = needle
+          ? indexed.filter(({ item }) => {
+              const name = (item.name || '').toLowerCase();
+              const artist = (item.artists || []).join(' ').toLowerCase();
+              const album = (item.album || '').toLowerCase();
+              return name.includes(needle) || artist.includes(needle) || album.includes(needle);
+            })
+          : indexed;
         right =
           queue.length === 0
             ? h(Empty, { label: t('queueEmpty'), icon: h(IconLyric, { size: 24 }) })
@@ -3622,7 +3680,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 h(
                   'div',
                   { className: 'dnm-np-queue-head' },
-                  h('span', null, queue.length + recordSuffix(t)),
+                  h('span', null, visible.length === queue.length ? queue.length + recordSuffix(t) : visible.length + ' / ' + queue.length),
                   h(
                     'button',
                     { type: 'button', className: 'dnm-btn', onClick: () => sharedPlayer.clearQueue() },
@@ -3632,19 +3690,35 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 ),
                 h(
                   'div',
-                  { className: 'dnm-np-queue' },
-                  queue.map((item, index) =>
-                    h(TrackRow, {
-                      key: String(item.id) + '-' + index,
-                      t,
-                      track: item,
-                      index,
-                      playing: Boolean(track && track.id === item.id),
-                      onPlay: () => sharedPlayer.playTrack(item, { queue, index }),
-                      onRemove: () => sharedPlayer.removeFromQueue(index),
-                    }),
-                  ),
+                  { className: 'dnm-queue-search' },
+                  h(IconSearch, { size: 13 }),
+                  h('input', {
+                    value: queueQuery,
+                    placeholder: t('queueSearchPlaceholder'),
+                    'aria-label': t('queueSearchPlaceholder'),
+                    onChange: (event) => setQueueQuery(event.target.value),
+                  }),
+                  queueQuery
+                    ? h('button', { type: 'button', className: 'dnm-queue-search-clear', title: t('clear'), onClick: () => setQueueQuery('') }, h(IconClose, { size: 12 }))
+                    : null,
                 ),
+                visible.length === 0
+                  ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
+                  : h(
+                      'div',
+                      { className: 'dnm-np-queue' },
+                      visible.map(({ item, index }) =>
+                        h(TrackRow, {
+                          key: String(item.id) + '-' + index,
+                          t,
+                          track: item,
+                          index,
+                          playing: Boolean(track && track.id === item.id),
+                          onPlay: () => sharedPlayer.playTrack(item, { queue, index }),
+                          onRemove: () => sharedPlayer.removeFromQueue(index),
+                        }),
+                      ),
+                    ),
               );
       } else if (lyric.status === 'loading') {
         right = h('div', { className: 'dnm-lyrics-empty' }, t('lyricLoading'));
@@ -4818,13 +4892,13 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
 
       const openArtist = useCallback((id) => {
         setArtistId(id);
-        setArtistFrom((previous) => (view === 'artist' || view === 'nowplaying' ? previous : view));
+        setArtistFrom((previous) => (view === 'artist' ? previous : view));
         setView('artist');
       }, [view]);
 
       const openAlbum = useCallback((id) => {
         setAlbumId(id);
-        setAlbumFrom((previous) => (view === 'album' || view === 'nowplaying' ? previous : view));
+        setAlbumFrom((previous) => (view === 'album' ? previous : view));
         setView('album');
       }, [view]);
 
@@ -4998,7 +5072,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
             'div',
             { className: 'dnm-main' },
             view === 'nowplaying'
-              ? h(NowPlayingView, { t, onBack: () => setView(prevView) })
+              ? h(NowPlayingView, { t, onBack: () => setView(prevView), onOpenArtist: openArtist, onOpenAlbum: openAlbum })
               : h('div', { className: 'dnm-scroll' }, content),
           ),
         ),
