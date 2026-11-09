@@ -220,6 +220,7 @@ window.__ModuleLoader__.load({
       shortcutMute: '静音 / 恢复',
       shortcutHelp: '打开快捷键列表',
       shortcutClose: '关闭弹窗或退出全屏',
+      zoomCover: '查看大图',
     };
 
     const en = {
@@ -426,6 +427,7 @@ window.__ModuleLoader__.load({
       shortcutMute: 'Mute / unmute',
       shortcutHelp: 'Open this shortcut list',
       shortcutClose: 'Close dialog or exit full screen',
+      zoomCover: 'View larger',
     };
 
     // ---------- 样式 ----------
@@ -579,6 +581,11 @@ window.__ModuleLoader__.load({
 .dnm-kbd{font-family:inherit;font-size:11px;line-height:1;padding:4px 7px;border-radius:6px;background:var(--dsw-alias-bg-layer-1);border:.5px solid var(--dsw-alias-border-l2);box-shadow:0 1px 0 var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
 .dnm-help-label{font-size:12.5px;color:var(--dsw-alias-label-secondary);text-align:right}
 .dnm-help-hint{margin:2px 0 0;font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
+.dnm-lightbox{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:32px;background:rgba(6,8,12,.74);backdrop-filter:blur(10px);animation:dnm-fade-in .18s ease both}
+.dnm-lightbox-img{max-width:min(760px,86vw);max-height:82vh;border-radius:16px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8);object-fit:contain;animation:dnm-zoom-in .22s cubic-bezier(.2,.8,.2,1) both;cursor:default}
+@keyframes dnm-zoom-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+.dnm-lightbox-close{position:absolute;top:20px;right:22px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:0;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;cursor:pointer;transition:background .15s}
+.dnm-lightbox-close:hover{background:rgba(255,255,255,.22)}
 .dnm-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-icon-btn:disabled{opacity:.4;cursor:default;background:transparent}
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dnm-red);color:#fff;box-shadow:0 4px 14px -4px color-mix(in srgb,var(--dnm-red) 60%,transparent);transition:transform .18s,opacity .18s}
@@ -1611,6 +1618,88 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
       return h('div', { className: 'dnm-toast', role: 'status' }, message);
     }
 
+    // 封面大图查看器（模块级，任何 Cover 都能唤起）
+    const coverZoomStore = (() => {
+      let url = '';
+      const listeners = new Set();
+      const emit = () => {
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* 忽略订阅者异常 */
+          }
+        }
+      };
+      return {
+        open(next) {
+          if (!next) return;
+          url = String(next);
+          emit();
+        },
+        close() {
+          if (!url) return;
+          url = '';
+          emit();
+        },
+        getSnapshot() {
+          return url;
+        },
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+    })();
+
+    function useCoverZoom() {
+      return useSyncExternalStore(coverZoomStore.subscribe, coverZoomStore.getSnapshot, coverZoomStore.getSnapshot);
+    }
+
+    function CoverLightbox({ t }) {
+      const url = useCoverZoom();
+      useEffect(() => {
+        if (!url) return undefined;
+        const onKey = (event) => {
+          if (event.key === 'Escape') coverZoomStore.close();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [url]);
+      if (!url) return null;
+      return createPortal(
+        h(
+          'div',
+          {
+            className: 'dnm-lightbox',
+            role: 'dialog',
+            'aria-label': t('zoomCover'),
+            onClick: () => coverZoomStore.close(),
+          },
+          h('img', {
+            className: 'dnm-lightbox-img',
+            src: url,
+            alt: '',
+            onClick: (event) => event.stopPropagation(),
+          }),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-lightbox-close',
+              title: t('close'),
+              onClick: (event) => {
+                event.stopPropagation();
+                coverZoomStore.close();
+              },
+            },
+            h(IconClose, { size: 16 }),
+          ),
+        ),
+        document.body,
+      );
+    }
+
     function usePlayerState() {
       return useSyncExternalStore(sharedPlayer.subscribe, sharedPlayer.getSnapshot, sharedPlayer.getSnapshot);
     }
@@ -1831,11 +1920,12 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
     }
 
     // 封面：加载失败时退回占位渐变
-    function Cover({ url, className, alt, rounded }) {
+    function Cover({ url, className, alt, rounded, onClick, title }) {
       const [broken, setBroken] = useState(false);
       useEffect(() => {
         setBroken(false);
       }, [url]);
+      const interactive = typeof onClick === 'function';
       const style = rounded ? { borderRadius: rounded } : undefined;
       if (!url || broken) {
         return h(
@@ -1859,10 +1949,12 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
       }
       return h('img', {
         className,
-        style,
+        style: interactive ? { ...style, cursor: 'zoom-in' } : style,
         src: url,
         alt: alt || '',
         loading: 'lazy',
+        onClick: interactive ? onClick : undefined,
+        title: interactive ? title : undefined,
         referrerPolicy: 'no-referrer',
         onError: () => setBroken(true),
       });
@@ -2932,7 +3024,13 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
                 h(
                   'div',
                   { className: 'dnm-playlist-head' },
-                  h(Cover, { url: playlist.coverUrl, className: 'dnm-playlist-cover', alt: playlist.name }),
+                  h(Cover, {
+                url: playlist.coverUrl,
+                className: 'dnm-playlist-cover',
+                alt: playlist.name,
+                onClick: () => coverZoomStore.open(playlist.coverUrl),
+                title: t('zoomCover'),
+              }),
                   h(
                     'div',
                     { className: 'dnm-playlist-info' },
@@ -3685,7 +3783,13 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
                 h(
                   'div',
                   { className: 'dnm-artist-head' },
-                  h(Cover, { url: artist.picUrl, className: 'dnm-artist-avatar', alt: artist.name }),
+                  h(Cover, {
+                url: artist.picUrl,
+                className: 'dnm-artist-avatar',
+                alt: artist.name,
+                onClick: () => coverZoomStore.open(artist.picUrl),
+                title: t('zoomCover'),
+              }),
                   h(
                     'div',
                     null,
@@ -3861,7 +3965,13 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
                 h(
                   'div',
                   { className: 'dnm-album-head' },
-                  h(Cover, { url: album.coverUrl, className: 'dnm-album-cover', alt: album.name }),
+                  h(Cover, {
+                url: album.coverUrl,
+                className: 'dnm-album-cover',
+                alt: album.name,
+                onClick: () => coverZoomStore.open(album.coverUrl),
+                title: t('zoomCover'),
+              }),
                   h(
                     'div',
                     null,
@@ -4608,7 +4718,13 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
       const left = h(
         'div',
         { className: 'dnm-np-left' },
-        h(Cover, { url: track ? track.coverUrl : '', className: 'dnm-np-cover', alt: t('coverAlt') }),
+        h(Cover, {
+          url: track ? track.coverUrl : '',
+          className: 'dnm-np-cover',
+          alt: t('coverAlt'),
+          onClick: track && track.coverUrl ? () => coverZoomStore.open(track.coverUrl) : undefined,
+          title: track && track.coverUrl ? t('zoomCover') : undefined,
+        }),
         h('h2', { className: 'dnm-np-name' }, track ? track.name : t('nowPlaying')),
         h(
           'p',
@@ -6389,6 +6505,7 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
         h(PlayerBar, { t, onOpenNowPlaying: openNowPlaying, onOpenHelp: () => setHelpOpen(true) }),
         h(ContextMenu, { t, onOpenArtist: openArtist, onOpenAlbum: openAlbum }),
         h(Toast),
+        h(CoverLightbox, { t }),
         helpOpen ? h(HelpDialog, { t, onClose: () => setHelpOpen(false) }) : null,
         loginOpen
           ? h(LoginDialog, {
