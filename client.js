@@ -578,6 +578,14 @@ window.__ModuleLoader__.load({
 @keyframes dnm-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.008)}}
 @media (prefers-reduced-motion:reduce){.dnm-np-cover{animation:none}}
 .dnm-np-actions{display:flex;align-items:center;gap:6px;margin-top:4px}
+.dnm-np-controls{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:20px}
+.dnm-np-controls .dnm-icon-btn{width:40px;height:40px;transition:background .16s,transform .16s}
+.dnm-np-controls .dnm-icon-btn:not(:disabled):hover{background:rgba(255,255,255,.1)}
+body:not([data-ds-dark-theme]) .dnm-np-controls .dnm-icon-btn:not(:disabled):hover{background:rgba(15,17,21,.06)}
+.dnm-np-controls .dnm-icon-btn.play{width:56px;height:56px;box-shadow:0 14px 30px -14px color-mix(in srgb,var(--dnm-red) 80%,transparent)}
+.dnm-np-controls .dnm-icon-btn.play:not(:disabled):hover{background:var(--dnm-red);opacity:.94}
+.dnm-np-progress{display:flex;align-items:center;gap:10px;margin-top:18px;font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.dnm-np-progress .dnm-range{flex:1 1 auto;min-width:0}
 .dnm-content{position:relative;isolation:isolate}
 .dnm-hero-bg{position:absolute;left:calc(-1 * clamp(18px,3vw,32px));right:calc(-1 * clamp(18px,3vw,32px));top:-20px;height:360px;z-index:-1;overflow:hidden;pointer-events:none}
 .dnm-hero-bg-img{position:absolute;inset:-20%;background-size:cover;background-position:center;filter:blur(58px) saturate(1.5);opacity:.32;transform:scale(1.15)}
@@ -3338,6 +3346,68 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
         h('h2', { className: 'dnm-np-name' }, track ? track.name : t('nowPlaying')),
         h('p', { className: 'dnm-np-artist' }, track ? artistText(track, t) : ''),
         track && track.album ? h('p', { className: 'dnm-np-album', title: track.album }, track.album) : null,
+        track
+          ? h(
+              'div',
+              { className: 'dnm-np-controls' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-icon-btn',
+                  title: '上一首',
+                  disabled: !track,
+                  onClick: () => sharedPlayer.previous(),
+                },
+                h(IconPrev, { size: 19 }),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-icon-btn play',
+                  title: state.playing ? '暂停' : '播放',
+                  disabled: !track,
+                  onClick: () => sharedPlayer.toggle(),
+                },
+                state.loading
+                  ? h('div', { className: 'dnm-spinner', style: { width: 18, height: 18 } })
+                  : state.playing
+                    ? h(IconPause, { size: 21 })
+                    : h(IconPlay, { size: 21 }),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-icon-btn',
+                  title: '下一首',
+                  disabled: !track,
+                  onClick: () => sharedPlayer.next(),
+                },
+                h(IconNext, { size: 19 }),
+              ),
+            )
+          : null,
+        track
+          ? h(
+              'div',
+              { className: 'dnm-np-progress' },
+              h('span', null, formatSeconds(state.currentTime)),
+              h('input', {
+                type: 'range',
+                className: 'dnm-range',
+                min: 0,
+                max: Math.max(1, state.duration),
+                step: 0.1,
+                value: state.currentTime,
+                'aria-label': '播放进度',
+                onChange: (event) => sharedPlayer.seek(Number(event.target.value)),
+                onInput: (event) => sharedPlayer.seek(Number(event.target.value)),
+              }),
+              h('span', null, formatSeconds(state.duration)),
+            )
+          : null,
         track
           ? h(
               'div',
