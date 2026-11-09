@@ -334,7 +334,9 @@ window.__ModuleLoader__.load({
 .dnm-nav{width:190px;flex:0 0 auto;padding:14px 10px;border-right:.5px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:2px;overflow:auto}
 .dnm-nav-item{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-radius:10px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;text-align:left;width:100%;white-space:nowrap}
 .dnm-nav-item:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dnm-nav-item{position:relative}
 .dnm-nav-item.active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font-weight:500}
+.dnm-nav-item.active::before{content:'';position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--dnm-red)}
 .dnm-nav-sep{margin:10px 12px;border-top:.5px solid var(--dsw-alias-border-l2)}
 .dnm-main{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dnm-scroll{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-gutter:stable}
@@ -391,6 +393,7 @@ window.__ModuleLoader__.load({
 .dnm-btn.primary:hover{background:var(--dnm-red);filter:brightness(1.08)}
 .dnm-btn:disabled{opacity:.5;cursor:default}
 .dnm-empty{padding:48px 16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.dnm-empty-icon{display:flex;align-items:center;justify-content:center;width:58px;height:58px;border-radius:20px;background:linear-gradient(145deg,var(--dsw-alias-bg-layer-1),var(--dsw-alias-bg-layer-2));color:var(--dsw-alias-label-tertiary);box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l2)}
 .dnm-spinner{width:18px;height:18px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dnm-red);animation:dnm-spin .8s linear infinite}
 @keyframes dnm-spin{to{transform:rotate(360deg)}}
 .dnm-player{flex:0 0 auto;border-top:.5px solid var(--dsw-alias-border-l2);padding:10px 18px;display:flex;align-items:center;gap:16px;background:var(--dsw-alias-bg-layer-1);min-height:72px}
@@ -427,6 +430,9 @@ window.__ModuleLoader__.load({
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dnm-red);color:#fff;box-shadow:0 4px 14px -4px color-mix(in srgb,var(--dnm-red) 60%,transparent);transition:transform .18s,opacity .18s}
 .dnm-icon-btn.play:hover{background:var(--dnm-red);opacity:.92;transform:scale(1.05)}
 .dnm-progress{display:flex;align-items:center;gap:10px;width:100%;max-width:520px}
+.dnm-progress-track{position:relative;display:flex;align-items:center;flex:1 1 auto;min-width:0;height:16px}
+.dnm-progress-track .dnm-range{width:100%}
+.dnm-progress-tip{position:absolute;bottom:calc(100% + 2px);transform:translateX(-50%);padding:2px 7px;border-radius:6px;background:var(--dsw-alias-bg-overlay);border:.5px solid var(--dsw-alias-border-l1);font-size:11px;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.32);z-index:5}
 .dnm-time{font-size:11px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;width:38px;flex:0 0 auto}
 .dnm-time.right{text-align:right}
 .dnm-range{-webkit-appearance:none;appearance:none;flex:1 1 auto;min-width:0;height:4px;border-radius:2px;background:var(--dsw-alias-border-l2);outline:0;cursor:pointer;accent-color:var(--dnm-red)}
@@ -568,6 +574,9 @@ window.__ModuleLoader__.load({
 .dnm-np-bg-img{position:absolute;inset:-16%;background-size:cover;background-position:center;filter:blur(72px) saturate(1.65);opacity:.4;transform:scale(1.08)}
 .dnm-np-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent) 0,transparent 30%,transparent 54%,var(--dsw-alias-bg-base) 100%)}
 .dnm-np-cover{box-shadow:0 28px 60px -28px rgba(0,0,0,.7),0 2px 6px rgba(0,0,0,.2)}
+.dnm-np-cover{animation:dnm-breathe 7s ease-in-out infinite;will-change:transform}
+@keyframes dnm-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.008)}}
+@media (prefers-reduced-motion:reduce){.dnm-np-cover{animation:none}}
 .dnm-np-actions{display:flex;align-items:center;gap:6px;margin-top:4px}
 .dnm-content{position:relative;isolation:isolate}
 .dnm-hero-bg{position:absolute;left:calc(-1 * clamp(18px,3vw,32px));right:calc(-1 * clamp(18px,3vw,32px));top:-20px;height:360px;z-index:-1;overflow:hidden;pointer-events:none}
@@ -1557,8 +1566,14 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function Empty({ label, action }) {
-      return h('div', { className: 'dnm-empty' }, h('span', null, label), action || null);
+    function Empty({ label, action, icon }) {
+      return h(
+        'div',
+        { className: 'dnm-empty' },
+        h('div', { className: 'dnm-empty-icon', 'aria-hidden': 'true' }, icon || h(IconMusic, { size: 24 })),
+        h('span', null, label),
+        action || null,
+      );
     }
 
     function ErrorBox({ message, onRetry, retryLabel }) {
@@ -1762,7 +1777,7 @@ window.__ModuleLoader__.load({
       } else if (playlists.status === 'error') {
         body = h(ErrorBox, { message: playlists.error, onRetry: playlists.reload, retryLabel: t('retry') });
       } else if ((playlists.data || []).length === 0) {
-        body = h(Empty, { label: t('noPlaylists') });
+        body = h(Empty, { label: t('noPlaylists'), icon: h(IconUser, { size: 24 }) });
       } else {
         body = h(
           'div',
@@ -2286,7 +2301,7 @@ window.__ModuleLoader__.load({
       } else if (result.status === 'error') {
         body = h(ErrorBox, { message: result.error, onRetry: result.reload, retryLabel: t('retry') });
       } else if (items.length === 0) {
-        body = h(Empty, { label: t('noResult') });
+        body = h(Empty, { label: t('noResult'), icon: h(IconSearch, { size: 24 }) });
       } else if (type === 'songs') {
         body = h(
           'div',
@@ -2787,7 +2802,7 @@ window.__ModuleLoader__.load({
           : fm.status === 'error'
             ? h(ErrorBox, { message: fm.error, onRetry: fm.reload, retryLabel: t('retry') })
             : visibleTracks.length === 0
-              ? h(Empty, { label: t('radioEmpty') })
+              ? h(Empty, { label: t('radioEmpty'), icon: h(IconRadio, { size: 24 }) })
               : visibleTracks.map((track, index) =>
                   h(TrackRow, {
                     key: track.id + '-' + index,
@@ -3254,7 +3269,7 @@ window.__ModuleLoader__.load({
         const queue = state.queue || [];
         right =
           queue.length === 0
-            ? h('div', { className: 'dnm-lyrics-empty' }, t('queueEmpty'))
+            ? h(Empty, { label: t('queueEmpty'), icon: h(IconLyric, { size: 24 }) })
             : h(
                 'div',
                 { className: 'dnm-np-queue-wrap' },
@@ -3392,6 +3407,13 @@ window.__ModuleLoader__.load({
       const liked = track ? likedIds.has(track.id) : false;
       const duration = state.duration || (track ? track.duration / 1000 : 0);
       const progress = duration > 0 ? Math.min(state.currentTime, duration) : 0;
+      const [hoverRatio, setHoverRatio] = React.useState(null);
+      const updateHover = (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+        setHoverRatio(ratio);
+      };
       const modeLabel =
         state.mode === 'single' ? t('playModeSingle') : state.mode === 'shuffle' ? t('playModeShuffle') : t('playModeList');
       return h(
@@ -3512,16 +3534,32 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'dnm-progress' },
             h('span', { className: 'dnm-time' }, formatSeconds(progress)),
-            h('input', {
-              className: 'dnm-range',
-              type: 'range',
-              min: 0,
-              max: Math.max(1, Math.round(duration)),
-              step: 1,
-              value: Math.round(progress),
-              disabled: !track,
-              onChange: (event) => sharedPlayer.seek(Number(event.target.value)),
-            }),
+            h(
+              'div',
+              {
+                className: 'dnm-progress-track',
+                onMouseMove: updateHover,
+                onMouseLeave: () => setHoverRatio(null),
+              },
+              h('input', {
+                className: 'dnm-range',
+                type: 'range',
+                min: 0,
+                max: Math.max(1, Math.round(duration)),
+                step: 1,
+                value: Math.round(progress),
+                disabled: !track,
+                onChange: (event) => sharedPlayer.seek(Number(event.target.value)),
+                onInput: (event) => sharedPlayer.seek(Number(event.target.value)),
+              }),
+              hoverRatio !== null && duration > 0
+                ? h(
+                    'div',
+                    { className: 'dnm-progress-tip', style: { left: hoverRatio * 100 + '%' } },
+                    formatSeconds(hoverRatio * duration),
+                  )
+                : null,
+            ),
             h('span', { className: 'dnm-time right' }, formatSeconds(duration)),
           ),
           state.error
