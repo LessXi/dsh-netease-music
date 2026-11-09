@@ -138,6 +138,7 @@ window.__ModuleLoader__.load({
       recent: '最近播放',
       recentEmpty: '还没有播放记录',
       clearHistory: '清空记录',
+      queuedCount: '已加入播放队列 · {n} 首',
       searchHistory: '搜索历史',
       hotSearch: '热门搜索',
       clear: '清空',
@@ -312,6 +313,7 @@ window.__ModuleLoader__.load({
       recent: 'Recently played',
       recentEmpty: 'Nothing played yet',
       clearHistory: 'Clear history',
+      queuedCount: 'Queued {n} tracks',
       searchHistory: 'Search history',
       hotSearch: 'Trending',
       clear: 'Clear',
@@ -409,7 +411,7 @@ window.__ModuleLoader__.load({
 .dnm-sub{color:var(--dsw-alias-label-secondary);font-size:13px;margin:0 0 18px}
 .dnm-section{margin-bottom:28px}
 .dnm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
-.dnm-card{display:flex;flex-direction:column;gap:8px;border:0;background:transparent;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;border-radius:12px;overflow:hidden}
+.dnm-card{position:relative;display:flex;flex-direction:column;gap:8px;border:0;background:transparent;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;border-radius:12px;outline:none}
 .dnm-card:hover .dnm-cover{transform:scale(1.03)}
 .dnm-cover{position:relative;width:100%;aspect-ratio:1/1;border-radius:12px;overflow:hidden;background:var(--dsw-alias-bg-layer-2);flex:0 0 auto;transition:transform .18s}
 .dnm-cover img{width:100%;height:100%;object-fit:cover;display:block}
@@ -676,10 +678,11 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 .dnm-card:hover{transform:translateY(-4px)}
 .dnm-cover{transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.16)}
 .dnm-card:hover .dnm-cover{transform:scale(1.02);box-shadow:0 20px 38px -16px rgba(0,0,0,.58)}
-.dnm-card .dnm-cover::before{content:'';position:absolute;right:10px;bottom:10px;width:34px;height:34px;border-radius:50%;background:var(--dnm-red);box-shadow:0 6px 16px rgba(0,0,0,.42);opacity:0;transform:translateY(8px) scale(.92);transition:opacity .22s,transform .22s;z-index:2}
-.dnm-card:hover .dnm-cover::before{opacity:1;transform:none}
-.dnm-card .dnm-cover::after{content:'';position:absolute;right:22px;bottom:21px;width:0;height:0;border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent #fff;opacity:0;transform:translateY(8px) scale(.92);transition:opacity .22s,transform .22s;z-index:3}
-.dnm-card:hover .dnm-cover::after{opacity:1;transform:none}
+.dnm-card-play{position:absolute;right:9px;bottom:9px;z-index:3;display:flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:0;border-radius:50%;background:var(--dnm-red);color:#fff;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.42);opacity:0;transform:translateY(8px) scale(.92);transition:opacity .22s,transform .22s}
+.dnm-card:hover .dnm-card-play,.dnm-card:focus-within .dnm-card-play{opacity:1;transform:none}
+.dnm-card-play:hover{transform:scale(1.06)}
+.dnm-card-play.busy{opacity:1;transform:none}
+.dnm-card:focus-visible{box-shadow:0 0 0 2px var(--dnm-red)}
 .dnm-row{position:relative;transition:background .16s}
 .dnm-row::before{content:'';position:absolute;left:2px;top:8px;bottom:8px;width:2.5px;border-radius:2px;background:var(--dnm-red);opacity:0;transform:scaleY(.35);transition:opacity .16s,transform .16s}
 .dnm-row:hover::before{opacity:.85;transform:none}
@@ -1719,6 +1722,93 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       });
     }
 
+    // 卡片右下角的播放按钮：不进入详情页，直接播放
+    function CardPlayButton({ label, busy, onClick }) {
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'dnm-card-play' + (busy ? ' busy' : ''),
+          title: label,
+          'aria-label': label,
+          onClick: (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!busy) onClick();
+          },
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!busy) onClick();
+            }
+          },
+        },
+        busy ? h('div', { className: 'dnm-spinner', style: { width: 14, height: 14 } }) : h(IconPlay, { size: 13 }),
+      );
+    }
+
+    // 直接播放某个歌单（优先用列表缓存里的曲目，避免重复请求）
+    async function playPlaylistById(playlistId) {
+      const cached = cacheGet('playlist:' + playlistId);
+      let tracks = cached && Array.isArray(cached.tracks) && cached.tracks.length > 0 ? cached.tracks : null;
+      if (!tracks) {
+        const data = await rpc('playlistDetail', { id: playlistId, n: 1000 });
+        const playlist = data && data.playlist ? data.playlist : null;
+        if (!playlist) throw new Error('歌单不存在');
+        tracks = normalizeTracks(playlist.tracks || []);
+      }
+      if (!tracks || tracks.length === 0) throw new Error('歌单是空的');
+      sharedPlayer.playQueue(tracks, 0);
+      return tracks.length;
+    }
+
+    // 直接播放某个专辑
+    async function playAlbumById(albumId) {
+      const cached = cacheGet('album:' + albumId);
+      let songs = cached && Array.isArray(cached.songs) && cached.songs.length > 0 ? cached.songs : null;
+      if (!songs) {
+        const data = await rpc('albumDetail', { id: albumId });
+        songs = normalizeTracks((data && data.songs) || []);
+      }
+      if (!songs || songs.length === 0) throw new Error('专辑是空的');
+      sharedPlayer.playQueue(songs, 0);
+      return songs.length;
+    }
+
+    // 直接播放某个歌手的热门歌曲
+    async function playArtistById(artistId) {
+      const cached = cacheGet('artist:' + artistId);
+      let songs = cached && Array.isArray(cached.hotSongs) && cached.hotSongs.length > 0 ? cached.hotSongs : null;
+      if (!songs) {
+        const data = await rpc('artistDetail', { id: artistId });
+        songs = normalizeTracks((data && data.hotSongs) || []);
+      }
+      if (!songs || songs.length === 0) throw new Error('歌手还没有歌曲');
+      sharedPlayer.playQueue(songs, 0);
+      return songs.length;
+    }
+
+    // 卡片上的播放动作：维护 loading 状态并给出提示
+    function useCardPlay(t) {
+      const [busyKey, setBusyKey] = useState(null);
+      const play = useCallback(
+        async (key, loader) => {
+          setBusyKey(key);
+          try {
+            const count = await loader();
+            toastStore.show(t('queuedCount').replace('{n}', String(count)));
+          } catch (error) {
+            toastStore.show(String((error && error.message) || t('loadFailed')));
+          } finally {
+            setBusyKey(null);
+          }
+        },
+        [t],
+      );
+      return { busyKey, play };
+    }
+
     // ---------- 数据加载 hook ----------
 
     // 列表数据缓存：返回上一页时直接复用，避免每次重新请求导致闪骨架
@@ -2214,6 +2304,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
 
     // ---------- 视图：发现 ----------
     function DiscoverView({ t, onOpenPlaylist, onOpenToplist }) {
+      const cardPlay = useCardPlay(t);
       const charts = useAsync(async () => {
         const data = await rpc('toplist');
         return Array.isArray(data?.list) ? data.list : [];
@@ -2275,12 +2366,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                   { className: 'dnm-grid' },
                   (playlists.data || []).map((playlist) =>
                     h(
-                      'button',
+                      'div',
                       {
-                        type: 'button',
                         key: playlist.id,
                         className: 'dnm-card',
+                        role: 'button',
+                        tabIndex: 0,
                         onClick: () => onOpenPlaylist(playlist.id),
+                        onKeyDown: (event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            onOpenPlaylist(playlist.id);
+                          }
+                        },
                       },
                       h(
                         'div',
@@ -2288,6 +2386,11 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                         h(Cover, { url: playlist.picUrl, className: 'dnm-cover-img', alt: playlist.name }),
                         h('span', { className: 'dnm-cover-count' }, h(IconPlay, { size: 10 }), formatCount(playlist.playCount)),
                       ),
+                      h(CardPlayButton, {
+                        label: t('playAll'),
+                        busy: cardPlay.busyKey === 'pl:' + playlist.id,
+                        onClick: () => cardPlay.play('pl:' + playlist.id, () => playPlaylistById(playlist.id)),
+                      }),
                       h('div', { className: 'dnm-card-title' }, playlist.name),
                     ),
                   ),
@@ -2577,6 +2680,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
     ];
 
     function SearchView({ t, keyword, onSearch, onOpenPlaylist, onOpenArtist, onOpenAlbum }) {
+      const cardPlay = useCardPlay(t);
       const [input, setInput] = useState(keyword || '');
       const [type, setType] = useState('songs');
       useEffect(() => {
@@ -2696,14 +2800,26 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           { className: 'dnm-grid' },
           data.artists.map((artist) =>
             h(
-              'button',
+              'div',
               {
-                type: 'button',
                 key: artist.id,
                 className: 'dnm-card dnm-card-round',
+                role: 'button',
+                tabIndex: 0,
                 onClick: () => onOpenArtist(artist.id),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpenArtist(artist.id);
+                  }
+                },
               },
               h('div', { className: 'dnm-cover' }, h(Cover, { url: artist.picUrl || artist.img1v1Url, className: 'dnm-cover-img', alt: artist.name })),
+              h(CardPlayButton, {
+                label: t('playAll'),
+                busy: cardPlay.busyKey === 'ar:' + artist.id,
+                onClick: () => cardPlay.play('ar:' + artist.id, () => playArtistById(artist.id)),
+              }),
               h('div', { className: 'dnm-card-title' }, artist.name),
               h('div', { className: 'dnm-card-sub' }, artist.musicSize != null ? artist.musicSize + ' ' + t('artistSongs') : ''),
             ),
@@ -2715,14 +2831,26 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           { className: 'dnm-grid' },
           data.albums.map((album) =>
             h(
-              'button',
+              'div',
               {
-                type: 'button',
                 key: album.id,
                 className: 'dnm-card',
+                role: 'button',
+                tabIndex: 0,
                 onClick: () => onOpenAlbum(album.id),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpenAlbum(album.id);
+                  }
+                },
               },
               h('div', { className: 'dnm-cover' }, h(Cover, { url: album.picUrl, className: 'dnm-cover-img', alt: album.name })),
+              h(CardPlayButton, {
+                label: t('playAll'),
+                busy: cardPlay.busyKey === 'al:' + album.id,
+                onClick: () => cardPlay.play('al:' + album.id, () => playAlbumById(album.id)),
+              }),
               h('div', { className: 'dnm-card-title' }, album.name),
               h(
                 'div',
@@ -2738,12 +2866,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           { className: 'dnm-grid' },
           data.playlists.map((playlist) =>
             h(
-              'button',
+              'div',
               {
-                type: 'button',
                 key: playlist.id,
                 className: 'dnm-card',
+                role: 'button',
+                tabIndex: 0,
                 onClick: () => onOpenPlaylist(playlist.id),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpenPlaylist(playlist.id);
+                  }
+                },
               },
               h(
                 'div',
@@ -2751,6 +2886,11 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 h(Cover, { url: playlist.picUrl || playlist.coverImgUrl, className: 'dnm-cover-img', alt: playlist.name }),
                 h('span', { className: 'dnm-cover-count' }, h(IconPlay, { size: 10 }), formatCount(playlist.playCount)),
               ),
+              h(CardPlayButton, {
+                label: t('playAll'),
+                busy: cardPlay.busyKey === 'pl:' + playlist.id,
+                onClick: () => cardPlay.play('pl:' + playlist.id, () => playPlaylistById(playlist.id)),
+              }),
               h('div', { className: 'dnm-card-title' }, playlist.name),
             ),
           ),
@@ -2810,6 +2950,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
     // ---------- 视图：歌手 ----------
 
     function ArtistAlbums({ t, artistId, onOpenAlbum }) {
+      const cardPlay = useCardPlay(t);
       const albums = useAsync(async () => {
         const data = await rpc('artistAlbums', { id: artistId, limit: 100, offset: 0 });
         const list = Array.isArray(data?.hotAlbums) ? data.hotAlbums : [];
@@ -2831,9 +2972,26 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         { className: 'dnm-grid' },
         list.map((album) =>
           h(
-            'button',
-            { type: 'button', key: album.id, className: 'dnm-card', onClick: () => onOpenAlbum(album.id) },
+            'div',
+            {
+              key: album.id,
+              className: 'dnm-card',
+              role: 'button',
+              tabIndex: 0,
+              onClick: () => onOpenAlbum(album.id),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onOpenAlbum(album.id);
+                }
+              },
+            },
             h(Cover, { url: album.picUrl, className: 'dnm-cover', alt: album.name }),
+            h(CardPlayButton, {
+              label: t('playAll'),
+              busy: cardPlay.busyKey === 'al:' + album.id,
+              onClick: () => cardPlay.play('al:' + album.id, () => playAlbumById(album.id)),
+            }),
             h('div', { className: 'dnm-card-name' }, album.name),
             h(
               'div',
@@ -3343,6 +3501,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
     }
 
     function MineView({ t, onOpenPlaylist, onOpenLikes, onLogin }) {
+      const cardPlay = useCardPlay(t);
       const state = useSession();
       const uid = state.profile ? state.profile.userId : 0;
       const playlists = useAsync(async () => {
@@ -3459,12 +3618,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                   { className: 'dnm-grid' },
                   (playlists.data || []).map((playlist) =>
                     h(
-                      'button',
+                      'div',
                       {
-                        type: 'button',
                         key: playlist.id,
                         className: 'dnm-card',
+                        role: 'button',
+                        tabIndex: 0,
                         onClick: () => onOpenPlaylist(playlist.id),
+                        onKeyDown: (event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            onOpenPlaylist(playlist.id);
+                          }
+                        },
                       },
                       h(
                         'div',
@@ -3477,6 +3643,11 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                           formatCount(playlist.playCount),
                         ),
                       ),
+                      h(CardPlayButton, {
+                        label: t('playAll'),
+                        busy: cardPlay.busyKey === 'pl:' + playlist.id,
+                        onClick: () => cardPlay.play('pl:' + playlist.id, () => playPlaylistById(playlist.id)),
+                      }),
                       h('div', { className: 'dnm-card-title' }, playlist.name),
                     ),
                   ),
