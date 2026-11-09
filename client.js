@@ -56,6 +56,7 @@ window.__ModuleLoader__.load({
       loginExpired: '二维码已过期',
       fullscreenLyric: '全屏歌词',
       exitFullscreen: '退出全屏',
+      upNext: '接下来播放',
       loginFailed: '登录失败',
       loginRefresh: '刷新二维码',
       close: '关闭',
@@ -236,6 +237,7 @@ window.__ModuleLoader__.load({
       loginExpired: 'QR code expired',
       fullscreenLyric: 'Full screen lyrics',
       exitFullscreen: 'Exit full screen',
+      upNext: 'Up next',
       loginFailed: 'Login failed',
       loginRefresh: 'Refresh QR code',
       close: 'Close',
@@ -715,6 +717,10 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 @keyframes dnm-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.008)}}
 @media (prefers-reduced-motion:reduce){.dnm-np-cover{animation:none}}
 .dnm-np-actions{display:flex;align-items:center;gap:6px;margin-top:4px}
+.dnm-np-next{display:flex;flex-direction:column;gap:2px;margin-top:16px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);border:.5px solid var(--dsw-alias-border-l1);max-width:min(260px,100%)}
+.dnm-np-next-label{font-size:11px;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary)}
+.dnm-np-next-name{font-size:13px;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-np-next-artist{font-size:12px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dnm-np-controls{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:20px}
 .dnm-np-controls .dnm-icon-btn{width:40px;height:40px;transition:background .16s,transform .16s}
 .dnm-np-controls .dnm-icon-btn:not(:disabled):hover{background:rgba(255,255,255,.1)}
@@ -756,6 +762,7 @@ body:not([data-ds-dark-theme]) .dnm-tabs{background:rgba(15,17,21,.05)}
 body:not([data-ds-dark-theme]) .dnm-tab.active{background:#fff;box-shadow:0 1px 2px rgba(15,17,21,.1)}
 body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,17,21,.1)}
 body:not([data-ds-dark-theme]) .dnm-track-search{background:#fff;border-color:rgba(15,17,21,.1)}
+body:not([data-ds-dark-theme]) .dnm-np-next{background:rgba(15,17,21,.04);border-color:rgba(15,17,21,.08)}
 body:not([data-ds-dark-theme]) .dnm-sort-group{background:rgba(15,17,21,.05)}
 body:not([data-ds-dark-theme]) .dnm-sort-btn.active{background:#fff;box-shadow:0 1px 2px rgba(15,17,21,.12)}
 body:not([data-ds-dark-theme]) .dnm-mini{background:color-mix(in srgb,#fff 94%,transparent);box-shadow:0 18px 44px -20px rgba(15,17,21,.35)}
@@ -2901,8 +2908,23 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         body = h(Empty, { label: t('noResult'), icon: h(IconSearch, { size: 24 }) });
       } else if (type === 'songs') {
         body = h(
-          'div',
+          React.Fragment,
           null,
+          h(
+            'div',
+            { className: 'dnm-actions', style: { marginBottom: 10 } },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dnm-btn primary',
+                onClick: () => sharedPlayer.playQueue(data.songs, 0),
+              },
+              h(IconPlay, { size: 14 }),
+              t('playAll'),
+            ),
+            h('span', { className: 'dnm-track-count' }, data.songs.length + recordSuffix(t)),
+          ),
           data.songs.map((track, index) =>
             h(TrackRow, {
               key: track.id + '-' + index,
@@ -3958,6 +3980,8 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const [queueQuery, setQueueQuery] = useState('');
       const track = state.track;
       const liked = track ? likedIds.has(track.id) : false;
+      const queueList = state.queue || [];
+      const upcoming = track && state.index >= 0 && state.index + 1 < queueList.length ? queueList[state.index + 1] : null;
       const lyric = useLyric(track ? track.id : null);
       const lines = (lyric.data && lyric.data.lines) || [];
       const [activeIndex, setActiveIndex] = useState(-1);
@@ -4127,6 +4151,15 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 },
                 h(IconHeart, { size: 17 }),
               ),
+            )
+          : null,
+        upcoming
+          ? h(
+              'div',
+              { className: 'dnm-np-next' },
+              h('span', { className: 'dnm-np-next-label' }, t('upNext')),
+              h('span', { className: 'dnm-np-next-name' }, upcoming.name),
+              h('span', { className: 'dnm-np-next-artist' }, artistText(upcoming, t)),
             )
           : null,
       );
