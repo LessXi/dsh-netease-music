@@ -139,6 +139,11 @@ window.__ModuleLoader__.load({
       recentEmpty: '还没有播放记录',
       clearHistory: '清空记录',
       queuedCount: '已加入播放队列 · {n} 首',
+      trackSearchPlaceholder: '搜索歌单里的歌',
+      sortDefault: '默认顺序',
+      sortName: '歌名',
+      sortArtist: '歌手',
+      sortDuration: '时长',
       searchHistory: '搜索历史',
       hotSearch: '热门搜索',
       clear: '清空',
@@ -314,6 +319,11 @@ window.__ModuleLoader__.load({
       recentEmpty: 'Nothing played yet',
       clearHistory: 'Clear history',
       queuedCount: 'Queued {n} tracks',
+      trackSearchPlaceholder: 'Search in this playlist',
+      sortDefault: 'Default',
+      sortName: 'Title',
+      sortArtist: 'Artist',
+      sortDuration: 'Duration',
       searchHistory: 'Search history',
       hotSearch: 'Trending',
       clear: 'Clear',
@@ -598,6 +608,16 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 .dnm-queue-search-clear{display:flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
 .dnm-np-link{display:inline;border:0;background:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .dnm-np-link:hover{color:var(--dsw-alias-label-primary);text-decoration:underline;text-underline-offset:2px}
+.dnm-track-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 12px}
+.dnm-track-search{display:flex;align-items:center;gap:6px;flex:1 1 220px;min-width:180px;max-width:340px;padding:0 9px;height:30px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary)}
+.dnm-track-search:focus-within{border-color:var(--dnm-red)}
+.dnm-track-search input{flex:1 1 auto;min-width:0;border:0;outline:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
+.dnm-track-search input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dnm-sort-group{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-layer-1);flex:0 0 auto}
+.dnm-sort-btn{border:0;background:none;padding:4px 9px;border-radius:6px;font:inherit;font-size:12px;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background .16s,color .16s}
+.dnm-sort-btn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.dnm-sort-btn.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgba(0,0,0,.16)}
+.dnm-track-count{margin-left:auto;font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:0 0 auto}
 .dnm-tabs{display:inline-flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;margin-bottom:18px}
 .dnm-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .dnm-tab:hover{color:var(--dsw-alias-label-primary)}
@@ -735,6 +755,9 @@ body:not([data-ds-dark-theme]) .dnm-modal{box-shadow:0 26px 62px -24px rgba(15,1
 body:not([data-ds-dark-theme]) .dnm-tabs{background:rgba(15,17,21,.05)}
 body:not([data-ds-dark-theme]) .dnm-tab.active{background:#fff;box-shadow:0 1px 2px rgba(15,17,21,.1)}
 body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,17,21,.1)}
+body:not([data-ds-dark-theme]) .dnm-track-search{background:#fff;border-color:rgba(15,17,21,.1)}
+body:not([data-ds-dark-theme]) .dnm-sort-group{background:rgba(15,17,21,.05)}
+body:not([data-ds-dark-theme]) .dnm-sort-btn.active{background:#fff;box-shadow:0 1px 2px rgba(15,17,21,.12)}
 body:not([data-ds-dark-theme]) .dnm-mini{background:color-mix(in srgb,#fff 94%,transparent);box-shadow:0 18px 44px -20px rgba(15,17,21,.35)}
 body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)}
 body:not([data-ds-dark-theme]) .dnm-suggest{background:#fff;box-shadow:0 18px 44px -20px rgba(15,17,21,.32),0 0 0 .5px rgba(15,17,21,.06)}
@@ -2450,6 +2473,26 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
 
     // ---------- 视图：歌单详情 ----------
 
+    const TRACK_SORTS = [
+      { key: 'default', label: 'sortDefault' },
+      { key: 'name', label: 'sortName' },
+      { key: 'artist', label: 'sortArtist' },
+      { key: 'duration', label: 'sortDuration' },
+    ];
+
+    function sortTracks(entries, sortBy, t) {
+      if (sortBy === 'name') {
+        return [...entries].sort((a, b) => String(a.track.name || '').localeCompare(String(b.track.name || ''), 'zh-CN'));
+      }
+      if (sortBy === 'artist') {
+        return [...entries].sort((a, b) => artistText(a.track, t).localeCompare(artistText(b.track, t), 'zh-CN'));
+      }
+      if (sortBy === 'duration') {
+        return [...entries].sort((a, b) => (Number(a.track.duration) || 0) - (Number(b.track.duration) || 0));
+      }
+      return entries;
+    }
+
     function PlaylistView({ t, playlistId, onBack }) {
       const detail = useAsync(async () => {
         const data = await rpc('playlistDetail', { id: playlistId, n: 1000 });
@@ -2481,11 +2524,23 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const session = useSession();
       const [tab, setTab] = useState('tracks');
       const [expanded, setExpanded] = useState(false);
+      const [trackQuery, setTrackQuery] = useState('');
+      const [sortBy, setSortBy] = useState('default');
       const [subscribedOverride, setSubscribedOverride] = useState(null);
       const [subscribeBusy, setSubscribeBusy] = useState(false);
       const [subscribeError, setSubscribeError] = useState('');
       const playlist = detail.data;
       const currentId = playerState.track ? playerState.track.id : null;
+      const needle = trackQuery.trim().toLowerCase();
+      const trackEntries = playlist ? playlist.tracks.map((track, index) => ({ track, index })) : [];
+      const matchedEntries = needle
+        ? trackEntries.filter(({ track }) =>
+            [track.name, artistText(track, t), track.album].some((value) =>
+              String(value || '').toLowerCase().includes(needle),
+            ),
+          )
+        : trackEntries;
+      const visibleTracks = sortTracks(matchedEntries, sortBy, t);
       const subscribed = playlist ? (subscribedOverride === null ? playlist.subscribed : subscribedOverride) : false;
       const toggleSubscribe = () => {
         if (!playlist || subscribeBusy) return;
@@ -2617,18 +2672,69 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                   : playlist.tracks.length === 0
                     ? h(Empty, { label: t('empty') })
                     : h(
-                        'div',
+                        React.Fragment,
                         null,
-                        playlist.tracks.map((track, index) =>
-                          h(TrackRow, {
-                            key: track.id + '-' + index,
-                            track,
-                            index,
-                            playing: currentId === track.id,
-                            t,
-                            onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
-                          }),
+                        h(
+                          'div',
+                          { className: 'dnm-track-toolbar' },
+                          h(
+                            'label',
+                            { className: 'dnm-track-search' },
+                            h(IconSearch, { size: 13 }),
+                            h('input', {
+                              type: 'search',
+                              value: trackQuery,
+                              placeholder: t('trackSearchPlaceholder'),
+                              'aria-label': t('trackSearchPlaceholder'),
+                              onChange: (event) => setTrackQuery(event.target.value),
+                            }),
+                            trackQuery
+                              ? h(
+                                  'button',
+                                  {
+                                    type: 'button',
+                                    className: 'dnm-queue-search-clear',
+                                    'aria-label': t('clear'),
+                                    onClick: () => setTrackQuery(''),
+                                  },
+                                  h(IconClose, { size: 11 }),
+                                )
+                              : null,
+                          ),
+                          h(
+                            'div',
+                            { className: 'dnm-sort-group' },
+                            TRACK_SORTS.map((option) =>
+                              h(
+                                'button',
+                                {
+                                  key: option.key,
+                                  type: 'button',
+                                  className: 'dnm-sort-btn' + (sortBy === option.key ? ' active' : ''),
+                                  onClick: () => setSortBy(option.key),
+                                },
+                                t(option.label),
+                              ),
+                            ),
+                          ),
+                          h(
+                            'span',
+                            { className: 'dnm-track-count' },
+                            needle ? visibleTracks.length + ' / ' + playlist.tracks.length : playlist.tracks.length + recordSuffix(t),
+                          ),
                         ),
+                        visibleTracks.length === 0
+                          ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
+                          : visibleTracks.map(({ track, index }) =>
+                              h(TrackRow, {
+                                key: track.id + '-' + index,
+                                track,
+                                index,
+                                playing: currentId === track.id,
+                                t,
+                                onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
+                              }),
+                            ),
                       ),
               ),
       );
