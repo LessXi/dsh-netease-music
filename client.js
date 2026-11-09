@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
   id: '@local/dsh-netease-music',
   factory(require) {
     const React = require('react');
+    const { createPortal } = require('react-dom');
     const h = React.createElement;
     const { useState, useEffect, useMemo, useRef, useCallback, useSyncExternalStore } = React;
 
@@ -53,6 +54,8 @@ window.__ModuleLoader__.load({
       loginScanned: '已扫码，请在手机上确认',
       loginSuccess: '登录成功',
       loginExpired: '二维码已过期',
+      fullscreenLyric: '全屏歌词',
+      exitFullscreen: '退出全屏',
       loginFailed: '登录失败',
       loginRefresh: '刷新二维码',
       close: '关闭',
@@ -225,6 +228,8 @@ window.__ModuleLoader__.load({
       loginScanned: 'Scanned, confirm on your phone',
       loginSuccess: 'Logged in',
       loginExpired: 'QR code expired',
+      fullscreenLyric: 'Full screen lyrics',
+      exitFullscreen: 'Exit full screen',
       loginFailed: 'Login failed',
       loginRefresh: 'Refresh QR code',
       close: 'Close',
@@ -558,6 +563,29 @@ window.__ModuleLoader__.load({
 .dnm-np-queue-wrap{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .dnm-np-queue-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 8px;font-size:12px;color:var(--dsw-alias-label-secondary);flex:0 0 auto}
 .dnm-queue-search{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin:0 2px 8px;padding:0 9px;height:30px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary)}
+.dnm-lyric-full{position:fixed;inset:0;z-index:70;--dnm-red:#ec4141;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);isolation:isolate;animation:dnm-fade-in .22s cubic-bezier(.2,.8,.2,1) both}
+.dnm-lyric-full-bg{position:absolute;inset:0;z-index:-2;overflow:hidden}
+.dnm-lyric-full-bg-img{position:absolute;inset:-16%;background-size:cover;background-position:center;filter:blur(90px) saturate(1.5);opacity:.34;transform:scale(1.1)}
+.dnm-lyric-full::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 52%,transparent) 0,var(--dsw-alias-bg-base) 82%)}
+.dnm-lyric-full-head{display:flex;align-items:center;gap:14px;padding:14px clamp(20px,5vw,44px);flex:0 0 auto}
+.dnm-lyric-full-meta{flex:1 1 auto;min-width:0}
+.dnm-lyric-full-name{font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-lyric-full-artist{font-size:12px;color:var(--dsw-alias-label-secondary);margin-top:2px}
+.dnm-lyric-full-lines{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:2px;padding:14vh clamp(24px,12vw,220px) 16vh}
+.dnm-lyric-full-lines::-webkit-scrollbar{width:0;height:0}
+.dnm-lyric-full .dnm-lyric-line{font-size:22px;line-height:1.55;max-width:min(880px,86vw);text-align:center}
+.dnm-lyric-full[data-lyric-size="small"] .dnm-lyric-line{font-size:18px}
+.dnm-lyric-full[data-lyric-size="large"] .dnm-lyric-line{font-size:27px}
+.dnm-lyric-full .dnm-lyric-line.active{font-size:1.16em}
+.dnm-lyric-full .dnm-lyric-trans{font-size:.62em;margin-top:.25em}
+.dnm-lyric-full-foot{display:flex;align-items:center;gap:12px;padding:10px clamp(20px,5vw,44px) 22px;flex:0 0 auto;color:var(--dsw-alias-label-secondary);font-size:12px;font-variant-numeric:tabular-nums}
+.dnm-lyric-full-foot .dnm-range{flex:1 1 auto;min-width:0}
+.dnm-lyric-full-foot .dnm-icon-btn{width:34px;height:34px}
+.dnm-lyric-full-foot .dnm-icon-btn.play{background:var(--dnm-red);color:#fff;width:42px;height:42px}
+.dnm-lyric-full-foot .dnm-icon-btn.play:hover{transform:scale(1.05)}
+body:not([data-ds-dark-theme]) .dnm-lyric-full-bg-img{opacity:.26}
+body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line{color:var(--dsw-alias-label-secondary)}
+body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(--dsw-alias-label-primary)}
 .dnm-banner{display:flex;align-items:center;gap:10px;flex:0 0 auto;padding:8px 20px;font-size:12px;color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,var(--dsw-alias-bg-base));border-bottom:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 34%,transparent)}
 .dnm-banner-text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dnm-banner-action{flex:0 0 auto;height:26px;padding:0 12px;border-radius:13px;border:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,transparent);background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer}
@@ -1598,6 +1626,22 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       svgIcon(size, null, {
         fill: 'none',
         children: [h('path', { key: 'a', d: 'M6 6l12 12M18 6L6 18', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' })],
+      });
+
+    // 全屏歌词：四角向外扩，和「缩小」共用一套路径
+    const IconExpand = ({ size = 14 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [
+          h('path', { key: 'a', d: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+        ],
+      });
+    const IconCollapse = ({ size = 14 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [
+          h('path', { key: 'a', d: 'M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+        ],
       });
 
     // 侧边栏图标：云朵 + 音符。颜色跟随侧边栏文字色，选中态由侧边栏自己渲染。
@@ -3597,6 +3641,8 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const lines = (lyric.data && lyric.data.lines) || [];
       const [activeIndex, setActiveIndex] = useState(-1);
       const lyricBoxRef = useRef(null);
+      const fullLyricRef = useRef(null);
+      const [fullscreen, setFullscreen] = useState(false);
       const [lyricOptions, setLyricOptions] = useState(readLyricSettings);
 
       const updateLyricOptions = (next) => {
@@ -3625,14 +3671,26 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       }, [lines, state.currentTime, activeIndex]);
 
       useEffect(() => {
-        const box = lyricBoxRef.current;
-        if (!box || activeIndex < 0) return;
-        const line = box.querySelector('[data-active="1"]');
-        if (!line) return;
-        const target = Math.max(0, line.offsetTop - box.clientHeight / 2 + line.offsetHeight / 2);
-        if (typeof box.scrollTo === 'function') box.scrollTo({ top: target, behavior: 'smooth' });
-        else box.scrollTop = target;
-      }, [activeIndex, tab]);
+        if (activeIndex < 0) return;
+        for (const ref of [lyricBoxRef, fullLyricRef]) {
+          const box = ref.current;
+          if (!box || box.clientHeight <= 0) continue;
+          const line = box.querySelector('[data-active="1"]');
+          if (!line) continue;
+          const target = Math.max(0, line.offsetTop - box.clientHeight / 2 + line.offsetHeight / 2);
+          if (typeof box.scrollTo === 'function') box.scrollTo({ top: target, behavior: 'smooth' });
+          else box.scrollTop = target;
+        }
+      }, [activeIndex, tab, fullscreen]);
+
+      useEffect(() => {
+        if (!fullscreen) return undefined;
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') setFullscreen(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [fullscreen]);
 
       const left = h(
         'div',
@@ -3888,6 +3946,18 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
               },
               'A ' + sizeLabel,
             ),
+            tab === 'lyric' && lines.length > 0
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dnm-np-tool',
+                    title: t('fullscreenLyric'),
+                    onClick: () => setFullscreen(true),
+                  },
+                  h(IconExpand, { size: 13 }),
+                )
+              : null,
           ),
           h(
             'div',
@@ -3910,6 +3980,116 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           ),
         ),
         h('div', { className: 'dnm-np-body' }, left, h('div', { className: 'dnm-np-right' }, right)),
+        fullscreen && lines.length > 0
+          ? createPortal(
+              h(
+                'div',
+                { className: 'dnm-lyric-full', 'data-lyric-size': lyricOptions.size, role: 'dialog', 'aria-label': t('fullscreenLyric') },
+              track && track.coverUrl
+                ? h(
+                    'div',
+                    { className: 'dnm-lyric-full-bg', 'aria-hidden': 'true' },
+                    h('div', { className: 'dnm-lyric-full-bg-img', style: { backgroundImage: 'url("' + track.coverUrl + '")' } }),
+                  )
+                : null,
+              h(
+                'div',
+                { className: 'dnm-lyric-full-head' },
+                h(
+                  'button',
+                  { type: 'button', className: 'dnm-icon-btn', title: t('exitFullscreen'), onClick: () => setFullscreen(false) },
+                  h(IconCollapse, { size: 16 }),
+                ),
+                h(
+                  'div',
+                  { className: 'dnm-lyric-full-meta' },
+                  h('div', { className: 'dnm-lyric-full-name' }, track ? track.name : t('nowPlaying')),
+                  h('div', { className: 'dnm-lyric-full-artist' }, track ? artistText(track, t) : ''),
+                ),
+                h(
+                  'div',
+                  { className: 'dnm-np-tools' },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dnm-np-tool' + (lyricOptions.translation ? ' on' : ''),
+                      title: t('lyricTranslation'),
+                      disabled: !hasTranslation,
+                      onClick: toggleTranslation,
+                    },
+                    t('lyricTranslation'),
+                  ),
+                  h(
+                    'button',
+                    { type: 'button', className: 'dnm-np-tool', title: t('lyricFont') + '：' + sizeLabel, onClick: cycleLyricSize },
+                    'A ' + sizeLabel,
+                  ),
+                ),
+              ),
+              h(
+                'div',
+                { className: 'dnm-lyric-full-lines', ref: fullLyricRef },
+                lines.map((line, index) =>
+                  h(
+                    'div',
+                    {
+                      key: index,
+                      className: 'dnm-lyric-line' + (index === activeIndex ? ' active' : ''),
+                      'data-active': index === activeIndex ? '1' : '0',
+                      role: 'button',
+                      tabIndex: 0,
+                      onClick: () => sharedPlayer.seek(line.time),
+                      onKeyDown: (event) => {
+                        if (event.key === 'Enter') sharedPlayer.seek(line.time);
+                      },
+                    },
+                    line.text,
+                    line.translation && lyricOptions.translation ? h('span', { className: 'dnm-lyric-trans' }, line.translation) : null,
+                  ),
+                ),
+              ),
+              h(
+                'div',
+                { className: 'dnm-lyric-full-foot' },
+                h('span', null, formatSeconds(state.currentTime)),
+                h('input', {
+                  className: 'dnm-range',
+                  type: 'range',
+                  min: 0,
+                  max: Math.max(1, state.duration),
+                  step: 0.1,
+                  value: Math.min(state.currentTime, Math.max(1, state.duration)),
+                  'aria-label': t('playProgress'),
+                  onChange: (event) => sharedPlayer.seek(Number(event.target.value)),
+                  onInput: (event) => sharedPlayer.seek(Number(event.target.value)),
+                }),
+                h('span', null, formatSeconds(state.duration)),
+                h(
+                  'button',
+                  { type: 'button', className: 'dnm-icon-btn', title: t('previousTrack'), onClick: () => sharedPlayer.previous() },
+                  h(IconPrev, { size: 16 }),
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dnm-icon-btn play',
+                    title: state.playing ? t('pause') : t('play'),
+                    onClick: () => sharedPlayer.toggle(),
+                  },
+                  state.playing ? h(IconPause, { size: 18 }) : h(IconPlay, { size: 18 }),
+                ),
+                h(
+                  'button',
+                  { type: 'button', className: 'dnm-icon-btn', title: t('nextTrack'), onClick: () => sharedPlayer.next() },
+                  h(IconNext, { size: 16 }),
+                ),
+                ),
+              ),
+              document.body,
+            )
+          : null,
       );
     }
 
