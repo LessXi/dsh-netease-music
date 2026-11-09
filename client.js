@@ -101,6 +101,7 @@ window.__ModuleLoader__.load({
       searchArtists: '歌手',
       searchAlbums: '专辑',
       searchPlaylists: '歌单',
+      searchAll: '查看全部结果',
       hotSongs: '热门歌曲',
       released: '发行',
       artistAlbums: '张专辑',
@@ -260,6 +261,7 @@ window.__ModuleLoader__.load({
       searchArtists: 'Artists',
       searchAlbums: 'Albums',
       searchPlaylists: 'Playlists',
+      searchAll: 'See all results',
       hotSongs: 'Popular songs',
       released: 'Released',
       artistAlbums: 'albums',
@@ -341,6 +343,18 @@ window.__ModuleLoader__.load({
 .dnm-brand{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;white-space:nowrap;flex:0 0 auto}
 .dnm-brand-mark{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#c20c0c;color:#fff;flex:0 0 auto}
 .dnm-search{display:flex;align-items:center;gap:8px;flex:1 1 auto;max-width:420px;height:34px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:17px;background:var(--dsw-alias-bg-layer-1);transition:border-color .15s}
+.dnm-search-wrap{position:relative;flex:1 1 auto;max-width:420px;min-width:0}
+.dnm-search-wrap .dnm-search{max-width:none;width:100%}
+.dnm-suggest{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:45;max-height:min(430px,62vh);overflow:auto;padding:6px;border-radius:12px;background:var(--dsw-alias-bg-overlay);border:.5px solid var(--dsw-alias-border-l2);box-shadow:0 18px 44px -18px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:1px}
+.dnm-suggest-section{padding:7px 8px 3px;font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dnm-suggest-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.dnm-suggest-item:hover,.dnm-suggest-item.active{background:var(--dsw-alias-interactive-bg-hover)}
+.dnm-suggest-cover{width:28px;height:28px;border-radius:6px;flex:0 0 auto}
+.dnm-suggest-round{border-radius:50%}
+.dnm-suggest-name{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-suggest-sub{font-size:11px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;flex:0 0 auto;max-width:45%;overflow:hidden;text-overflow:ellipsis}
+.dnm-suggest-all{border:0;background:none;color:var(--dnm-red);font:inherit;font-size:12px;padding:8px;cursor:pointer;text-align:left;border-radius:8px}
+.dnm-suggest-all:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-search:focus-within{border-color:var(--dnm-red);box-shadow:0 0 0 3px color-mix(in srgb,var(--dnm-red) 16%,transparent)}
 .dnm-search input{flex:1 1 auto;min-width:0;height:100%;border:0;outline:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
 .dnm-search input::placeholder{color:var(--dsw-alias-label-caption)}
@@ -655,6 +669,8 @@ body:not([data-ds-dark-theme]) .dnm-tab.active{background:#fff;box-shadow:0 1px 
 body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,17,21,.1)}
 body:not([data-ds-dark-theme]) .dnm-mini{background:color-mix(in srgb,#fff 94%,transparent);box-shadow:0 18px 44px -20px rgba(15,17,21,.35)}
 body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)}
+body:not([data-ds-dark-theme]) .dnm-suggest{background:#fff;box-shadow:0 18px 44px -20px rgba(15,17,21,.32),0 0 0 .5px rgba(15,17,21,.06)}
+body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-theme]) .dnm-suggest-item.active{background:rgba(15,17,21,.055)}
     `;
 
     function ensureCss() {
@@ -4563,6 +4579,212 @@ body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)
       );
     }
 
+    // 顶栏搜索框：边打字边给建议，回车看全部结果
+    function TopSearch({ t, onSearch, onPickSong, onPickArtist, onPickAlbum, onPickPlaylist }) {
+      const [value, setValue] = useState('');
+      const [open, setOpen] = useState(false);
+      const [data, setData] = useState(null);
+      const [active, setActive] = useState(-1);
+      const wrapRef = useRef(null);
+      const keyword = value.trim();
+
+      useEffect(() => {
+        if (!keyword) {
+          setData(null);
+          return undefined;
+        }
+        let alive = true;
+        const timer = setTimeout(() => {
+          rpc('searchSuggest', { s: keyword })
+            .then((payload) => {
+              if (!alive) return;
+              const result = (payload && payload.result) || {};
+              setData({
+                songs: normalizeTracks(Array.isArray(result.songs) ? result.songs : []).slice(0, 3),
+                artists: (Array.isArray(result.artists) ? result.artists : []).slice(0, 2),
+                albums: (Array.isArray(result.albums) ? result.albums : []).slice(0, 2),
+                playlists: (Array.isArray(result.playlists) ? result.playlists : []).slice(0, 2),
+              });
+              setActive(-1);
+            })
+            .catch(() => {
+              if (alive) setData(null);
+            });
+        }, 240);
+        return () => {
+          alive = false;
+          clearTimeout(timer);
+        };
+      }, [keyword]);
+
+      useEffect(() => {
+        if (typeof document === 'undefined') return undefined;
+        const onPointerDown = (event) => {
+          if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        return () => document.removeEventListener('mousedown', onPointerDown);
+      }, []);
+
+      const entries = [];
+      if (data) {
+        for (const track of data.songs) entries.push({ kind: 'song', track });
+        for (const artist of data.artists) entries.push({ kind: 'artist', artist });
+        for (const album of data.albums) entries.push({ kind: 'album', album });
+        for (const playlist of data.playlists) entries.push({ kind: 'playlist', playlist });
+      }
+
+      const close = () => {
+        setOpen(false);
+        setActive(-1);
+      };
+
+      const submit = () => {
+        if (!keyword) return;
+        close();
+        onSearch(keyword);
+      };
+
+      const pick = (entry) => {
+        close();
+        if (entry.kind === 'song') onPickSong(entry.track);
+        else if (entry.kind === 'artist') onPickArtist(entry.artist.id);
+        else if (entry.kind === 'album') onPickAlbum(entry.album.id);
+        else onPickPlaylist(entry.playlist.id);
+      };
+
+      const onKeyDown = (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (open && active >= 0 && entries[active]) pick(entries[active]);
+          else submit();
+          return;
+        }
+        if (event.key === 'Escape') {
+          close();
+          return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          if (!open || entries.length === 0) return;
+          event.preventDefault();
+          const delta = event.key === 'ArrowDown' ? 1 : -1;
+          setActive((previous) => {
+            const next = previous + delta;
+            if (next < -1) return entries.length - 1;
+            if (next >= entries.length) return -1;
+            return next;
+          });
+        }
+      };
+
+      const renderItem = (entry, index) => {
+        const className = 'dnm-suggest-item' + (index === active ? ' active' : '');
+        const shared = {
+          type: 'button',
+          className,
+          onMouseDown: (event) => event.preventDefault(),
+          onClick: () => pick(entry),
+        };
+        if (entry.kind === 'song') {
+          return h(
+            'button',
+            { key: 'song-' + entry.track.id, ...shared },
+            h(Cover, { url: entry.track.coverUrl, className: 'dnm-suggest-cover', alt: '' }),
+            h('span', { className: 'dnm-suggest-name' }, entry.track.name),
+            h('span', { className: 'dnm-suggest-sub' }, artistText(entry.track, t)),
+          );
+        }
+        if (entry.kind === 'artist') {
+          return h(
+            'button',
+            { key: 'artist-' + entry.artist.id, ...shared },
+            h(Cover, { url: entry.artist.picUrl, className: 'dnm-suggest-cover dnm-suggest-round', alt: '' }),
+            h('span', { className: 'dnm-suggest-name' }, entry.artist.name),
+            h('span', { className: 'dnm-suggest-sub' }, t('searchArtists')),
+          );
+        }
+        if (entry.kind === 'album') {
+          return h(
+            'button',
+            { key: 'album-' + entry.album.id, ...shared },
+            h(Cover, { url: entry.album.picUrl, className: 'dnm-suggest-cover', alt: '' }),
+            h('span', { className: 'dnm-suggest-name' }, entry.album.name),
+            h('span', { className: 'dnm-suggest-sub' }, t('searchAlbums')),
+          );
+        }
+        return h(
+          'button',
+          { key: 'playlist-' + entry.playlist.id, ...shared },
+          h(Cover, { url: entry.playlist.picUrl || entry.playlist.coverImgUrl, className: 'dnm-suggest-cover', alt: '' }),
+          h('span', { className: 'dnm-suggest-name' }, entry.playlist.name),
+          h('span', { className: 'dnm-suggest-sub' }, t('searchPlaylists')),
+        );
+      };
+
+      let panel = null;
+      if (open && keyword && entries.length > 0) {
+        const rows = [];
+        let index = 0;
+        const pushSection = (title, kind, list) => {
+          if (!list || list.length === 0) return;
+          rows.push(h('div', { key: 'section-' + title, className: 'dnm-suggest-section' }, title));
+          for (const item of list) {
+            const entry =
+              kind === 'song'
+                ? { kind: 'song', track: item }
+                : kind === 'artist'
+                  ? { kind: 'artist', artist: item }
+                  : kind === 'album'
+                    ? { kind: 'album', album: item }
+                    : { kind: 'playlist', playlist: item };
+            rows.push(renderItem(entry, index));
+            index += 1;
+          }
+        };
+        pushSection(t('searchSongs'), 'song', data.songs);
+        pushSection(t('searchArtists'), 'artist', data.artists);
+        pushSection(t('searchAlbums'), 'album', data.albums);
+        pushSection(t('searchPlaylists'), 'playlist', data.playlists);
+        rows.push(
+          h(
+            'button',
+            {
+              key: 'all',
+              type: 'button',
+              className: 'dnm-suggest-all',
+              onMouseDown: (event) => event.preventDefault(),
+              onClick: submit,
+            },
+            t('searchAll'),
+          ),
+        );
+        panel = h('div', { className: 'dnm-suggest', role: 'listbox' }, rows);
+      }
+
+      return h(
+        'div',
+        { className: 'dnm-search-wrap', ref: wrapRef },
+        h(
+          'div',
+          { className: 'dnm-search' },
+          h(IconSearch, { size: 15 }),
+          h('input', {
+            value,
+            placeholder: t('searchPlaceholder'),
+            onChange: (event) => {
+              setValue(event.target.value);
+              setOpen(true);
+            },
+            onFocus: () => {
+              if (keyword) setOpen(true);
+            },
+            onKeyDown,
+          }),
+        ),
+        panel,
+      );
+    }
+
     // ---------- 主面板 ----------
 
     function NeteaseMusicPage(props) {
@@ -4575,7 +4797,6 @@ body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)
       const [albumFrom, setAlbumFrom] = useState('search');
       const [artistFrom, setArtistFrom] = useState('search');
       const [keyword, setKeyword] = useState('');
-      const [searchInput, setSearchInput] = useState('');
       const [loginOpen, setLoginOpen] = useState(false);
       const state = useSession();
       const playerState = usePlayerState();
@@ -4683,19 +4904,16 @@ body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)
             h('span', { className: 'dnm-brand-mark', 'aria-hidden': 'true' }, h(IconMusic, { size: 13 })),
             h('span', null, t('brand')),
           ),
-          h(
-            'div',
-            { className: 'dnm-search' },
-            h(IconSearch, { size: 15 }),
-            h('input', {
-              value: searchInput,
-              placeholder: t('searchPlaceholder'),
-              onChange: (event) => setSearchInput(event.target.value),
-              onKeyDown: (event) => {
-                if (event.key === 'Enter' && searchInput.trim()) openSearch(searchInput.trim());
-              },
-            }),
-          ),
+          h(TopSearch, {
+            t,
+            onSearch: openSearch,
+            onPickSong: (track) => {
+              void sharedPlayer.playQueue([track], 0);
+            },
+            onPickArtist: openArtist,
+            onPickAlbum: openAlbum,
+            onPickPlaylist: openPlaylist,
+          }),
           h('div', { className: 'dnm-topbar-spacer' }),
           state.loggedIn && state.profile
             ? h(

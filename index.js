@@ -198,6 +198,11 @@ const ALLOWED_APIS = {
     path: '/weapi/search/hot',
     payload: () => ({ type: 1111 }),
   },
+  searchSuggest: {
+    method: 'GET',
+    path: '/api/search/suggest/web',
+    query: (p) => ({ s: String(p.s ?? '').trim().slice(0, 40) }),
+  },
   songDetail: {
     method: 'POST',
     path: '/weapi/v3/song/detail',
