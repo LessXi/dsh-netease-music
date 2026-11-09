@@ -2493,6 +2493,68 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       return entries;
     }
 
+    function filterTracks(entries, query, t) {
+      const needle = query.trim().toLowerCase();
+      if (!needle) return entries;
+      return entries.filter(({ track }) =>
+        [track.name, artistText(track, t), track.album].some((value) =>
+          String(value || '').toLowerCase().includes(needle),
+        ),
+      );
+    }
+
+    function TrackToolbar({ t, query, onQuery, sortBy, onSort, count, total }) {
+      return h(
+        'div',
+        { className: 'dnm-track-toolbar' },
+        h(
+          'label',
+          { className: 'dnm-track-search' },
+          h(IconSearch, { size: 13 }),
+          h('input', {
+            type: 'search',
+            value: query,
+            placeholder: t('trackSearchPlaceholder'),
+            'aria-label': t('trackSearchPlaceholder'),
+            onChange: (event) => onQuery(event.target.value),
+          }),
+          query
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-queue-search-clear',
+                  'aria-label': t('clear'),
+                  onClick: () => onQuery(''),
+                },
+                h(IconClose, { size: 11 }),
+              )
+            : null,
+        ),
+        h(
+          'div',
+          { className: 'dnm-sort-group' },
+          TRACK_SORTS.map((option) =>
+            h(
+              'button',
+              {
+                key: option.key,
+                type: 'button',
+                className: 'dnm-sort-btn' + (sortBy === option.key ? ' active' : ''),
+                onClick: () => onSort(option.key),
+              },
+              t(option.label),
+            ),
+          ),
+        ),
+        h(
+          'span',
+          { className: 'dnm-track-count' },
+          query.trim() ? count + ' / ' + total : total + recordSuffix(t),
+        ),
+      );
+    }
+
     function PlaylistView({ t, playlistId, onBack }) {
       const detail = useAsync(async () => {
         const data = await rpc('playlistDetail', { id: playlistId, n: 1000 });
@@ -2531,16 +2593,8 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const [subscribeError, setSubscribeError] = useState('');
       const playlist = detail.data;
       const currentId = playerState.track ? playerState.track.id : null;
-      const needle = trackQuery.trim().toLowerCase();
       const trackEntries = playlist ? playlist.tracks.map((track, index) => ({ track, index })) : [];
-      const matchedEntries = needle
-        ? trackEntries.filter(({ track }) =>
-            [track.name, artistText(track, t), track.album].some((value) =>
-              String(value || '').toLowerCase().includes(needle),
-            ),
-          )
-        : trackEntries;
-      const visibleTracks = sortTracks(matchedEntries, sortBy, t);
+      const visibleTracks = sortTracks(filterTracks(trackEntries, trackQuery, t), sortBy, t);
       const subscribed = playlist ? (subscribedOverride === null ? playlist.subscribed : subscribedOverride) : false;
       const toggleSubscribe = () => {
         if (!playlist || subscribeBusy) return;
@@ -2674,55 +2728,15 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                     : h(
                         React.Fragment,
                         null,
-                        h(
-                          'div',
-                          { className: 'dnm-track-toolbar' },
-                          h(
-                            'label',
-                            { className: 'dnm-track-search' },
-                            h(IconSearch, { size: 13 }),
-                            h('input', {
-                              type: 'search',
-                              value: trackQuery,
-                              placeholder: t('trackSearchPlaceholder'),
-                              'aria-label': t('trackSearchPlaceholder'),
-                              onChange: (event) => setTrackQuery(event.target.value),
-                            }),
-                            trackQuery
-                              ? h(
-                                  'button',
-                                  {
-                                    type: 'button',
-                                    className: 'dnm-queue-search-clear',
-                                    'aria-label': t('clear'),
-                                    onClick: () => setTrackQuery(''),
-                                  },
-                                  h(IconClose, { size: 11 }),
-                                )
-                              : null,
-                          ),
-                          h(
-                            'div',
-                            { className: 'dnm-sort-group' },
-                            TRACK_SORTS.map((option) =>
-                              h(
-                                'button',
-                                {
-                                  key: option.key,
-                                  type: 'button',
-                                  className: 'dnm-sort-btn' + (sortBy === option.key ? ' active' : ''),
-                                  onClick: () => setSortBy(option.key),
-                                },
-                                t(option.label),
-                              ),
-                            ),
-                          ),
-                          h(
-                            'span',
-                            { className: 'dnm-track-count' },
-                            needle ? visibleTracks.length + ' / ' + playlist.tracks.length : playlist.tracks.length + recordSuffix(t),
-                          ),
-                        ),
+                        h(TrackToolbar, {
+                          t,
+                          query: trackQuery,
+                          onQuery: setTrackQuery,
+                          sortBy,
+                          onSort: setSortBy,
+                          count: visibleTracks.length,
+                          total: playlist.tracks.length,
+                        }),
                         visibleTracks.length === 0
                           ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
                           : visibleTracks.map(({ track, index }) =>
@@ -3133,8 +3147,12 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const [followedOverride, setFollowedOverride] = useState(null);
       const [followBusy, setFollowBusy] = useState(false);
       const [followError, setFollowError] = useState('');
+      const [trackQuery, setTrackQuery] = useState('');
+      const [sortBy, setSortBy] = useState('default');
       const currentId = playerState.track ? playerState.track.id : null;
       const artist = detail.data;
+      const songEntries = artist ? artist.hotSongs.map((track, index) => ({ track, index })) : [];
+      const visibleSongs = sortTracks(filterTracks(songEntries, trackQuery, t), sortBy, t);
       const following = followedOverride !== null ? followedOverride : Boolean(artist && artist.followed);
       const toggleFollow = () => {
         if (!artist) return;
@@ -3232,18 +3250,29 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                   : artist.hotSongs.length === 0
                     ? h(Empty, { label: t('empty') })
                     : h(
-                        'div',
+                        React.Fragment,
                         null,
-                        artist.hotSongs.map((track, index) =>
-                          h(TrackRow, {
-                            key: track.id + '-' + index,
-                            track,
-                            index,
-                            playing: currentId === track.id,
-                            t,
-                            onPlay: () => sharedPlayer.playQueue(artist.hotSongs, index),
-                          }),
-                        ),
+                        h(TrackToolbar, {
+                          t,
+                          query: trackQuery,
+                          onQuery: setTrackQuery,
+                          sortBy,
+                          onSort: setSortBy,
+                          count: visibleSongs.length,
+                          total: artist.hotSongs.length,
+                        }),
+                        visibleSongs.length === 0
+                          ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
+                          : visibleSongs.map(({ track, index }) =>
+                              h(TrackRow, {
+                                key: track.id + '-' + index,
+                                track,
+                                index,
+                                playing: currentId === track.id,
+                                t,
+                                onPlay: () => sharedPlayer.playQueue(artist.hotSongs, index),
+                              }),
+                            ),
                       ),
               ),
       );
@@ -3272,9 +3301,13 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const [savedOverride, setSavedOverride] = useState(null);
       const [saveBusy, setSaveBusy] = useState(false);
       const [saveError, setSaveError] = useState('');
+      const [trackQuery, setTrackQuery] = useState('');
+      const [sortBy, setSortBy] = useState('default');
       const currentId = playerState.track ? playerState.track.id : null;
       const album = detail.data;
       const saved = savedOverride !== null ? savedOverride : Boolean(album && album.subscribed);
+      const songEntries = album ? album.songs.map((track, index) => ({ track, index })) : [];
+      const visibleSongs = sortTracks(filterTracks(songEntries, trackQuery, t), sortBy, t);
       const toggleSave = () => {
         if (!album) return;
         if (!session.loggedIn) {
@@ -3354,18 +3387,29 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                 album.songs.length === 0
                   ? h(Empty, { label: t('empty') })
                   : h(
-                      'div',
+                      React.Fragment,
                       null,
-                      album.songs.map((track, index) =>
-                        h(TrackRow, {
-                          key: track.id + '-' + index,
-                          track,
-                          index,
-                          playing: currentId === track.id,
-                          t,
-                          onPlay: () => sharedPlayer.playQueue(album.songs, index),
-                        }),
-                      ),
+                      h(TrackToolbar, {
+                        t,
+                        query: trackQuery,
+                        onQuery: setTrackQuery,
+                        sortBy,
+                        onSort: setSortBy,
+                        count: visibleSongs.length,
+                        total: album.songs.length,
+                      }),
+                      visibleSongs.length === 0
+                        ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
+                        : visibleSongs.map(({ track, index }) =>
+                            h(TrackRow, {
+                              key: track.id + '-' + index,
+                              track,
+                              index,
+                              playing: currentId === track.id,
+                              t,
+                              onPlay: () => sharedPlayer.playQueue(album.songs, index),
+                            }),
+                          ),
                     ),
               ),
       );
