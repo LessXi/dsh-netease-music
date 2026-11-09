@@ -145,6 +145,7 @@ window.__ModuleLoader__.load({
       sortName: '歌名',
       sortArtist: '歌手',
       sortDuration: '时长',
+      groupByArtist: '按歌手分组',
       searchHistory: '搜索历史',
       hotSearch: '热门搜索',
       clear: '清空',
@@ -326,6 +327,7 @@ window.__ModuleLoader__.load({
       sortName: 'Title',
       sortArtist: 'Artist',
       sortDuration: 'Duration',
+      groupByArtist: 'Group by artist',
       searchHistory: 'Search history',
       hotSearch: 'Trending',
       clear: 'Clear',
@@ -620,6 +622,10 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 .dnm-sort-btn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .dnm-sort-btn.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgba(0,0,0,.16)}
 .dnm-track-count{margin-left:auto;font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:0 0 auto}
+.dnm-group{margin-bottom:6px}
+.dnm-group-head{display:flex;align-items:baseline;gap:8px;padding:10px 2px 6px;border-bottom:.5px solid var(--dsw-alias-border-l1);margin-bottom:2px}
+.dnm-group-name{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dnm-group-count{font-size:12px;color:var(--dsw-alias-label-tertiary)}
 .dnm-tabs{display:inline-flex;gap:4px;background:var(--dsw-alias-bg-layer-1);padding:3px;border-radius:9px;margin-bottom:18px}
 .dnm-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .dnm-tab:hover{color:var(--dsw-alias-label-primary)}
@@ -717,7 +723,8 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 @keyframes dnm-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.008)}}
 @media (prefers-reduced-motion:reduce){.dnm-np-cover{animation:none}}
 .dnm-np-actions{display:flex;align-items:center;gap:6px;margin-top:4px}
-.dnm-np-next{display:flex;flex-direction:column;gap:2px;margin-top:16px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);border:.5px solid var(--dsw-alias-border-l1);max-width:min(260px,100%)}
+.dnm-np-next{display:flex;flex-direction:column;gap:2px;margin-top:16px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);border:.5px solid var(--dsw-alias-border-l1);max-width:min(260px,100%);font:inherit;text-align:left;cursor:pointer;transition:background .16s,border-color .16s}
+.dnm-np-next:hover{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);border-color:var(--dsw-alias-border-l2)}
 .dnm-np-next-label{font-size:11px;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary)}
 .dnm-np-next-name{font-size:13px;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dnm-np-next-artist{font-size:12px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2486,6 +2493,19 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       { key: 'artist', label: 'sortArtist' },
       { key: 'duration', label: 'sortDuration' },
     ];
+    const PLAYLIST_SORTS = [...TRACK_SORTS, { key: 'group', label: 'groupByArtist' }];
+
+    function groupTracksByArtist(entries, t) {
+      const groups = new Map();
+      for (const entry of entries) {
+        const name = artistText(entry.track, t);
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(entry);
+      }
+      return [...groups.entries()]
+        .map(([artist, items]) => ({ artist, entries: items }))
+        .sort((a, b) => b.entries.length - a.entries.length || a.artist.localeCompare(b.artist, 'zh-CN'));
+    }
 
     function sortTracks(entries, sortBy, t) {
       if (sortBy === 'name') {
@@ -2510,7 +2530,8 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       );
     }
 
-    function TrackToolbar({ t, query, onQuery, sortBy, onSort, count, total }) {
+    function TrackToolbar({ t, query, onQuery, sortBy, onSort, count, total, sorts }) {
+      const options = sorts || TRACK_SORTS;
       return h(
         'div',
         { className: 'dnm-track-toolbar' },
@@ -2541,7 +2562,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         h(
           'div',
           { className: 'dnm-sort-group' },
-          TRACK_SORTS.map((option) =>
+          options.map((option) =>
             h(
               'button',
               {
@@ -2602,6 +2623,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const currentId = playerState.track ? playerState.track.id : null;
       const trackEntries = playlist ? playlist.tracks.map((track, index) => ({ track, index })) : [];
       const visibleTracks = sortTracks(filterTracks(trackEntries, trackQuery, t), sortBy, t);
+      const groupedTracks = sortBy === 'group' ? groupTracksByArtist(visibleTracks, t) : null;
       const subscribed = playlist ? (subscribedOverride === null ? playlist.subscribed : subscribedOverride) : false;
       const toggleSubscribe = () => {
         if (!playlist || subscribeBusy) return;
@@ -2743,19 +2765,43 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                           onSort: setSortBy,
                           count: visibleTracks.length,
                           total: playlist.tracks.length,
+                          sorts: PLAYLIST_SORTS,
                         }),
                         visibleTracks.length === 0
                           ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
-                          : visibleTracks.map(({ track, index }) =>
-                              h(TrackRow, {
-                                key: track.id + '-' + index,
-                                track,
-                                index,
-                                playing: currentId === track.id,
-                                t,
-                                onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
-                              }),
-                            ),
+                          : groupedTracks
+                            ? groupedTracks.map((group) =>
+                                h(
+                                  'div',
+                                  { key: group.artist, className: 'dnm-group' },
+                                  h(
+                                    'div',
+                                    { className: 'dnm-group-head' },
+                                    h('span', { className: 'dnm-group-name' }, group.artist),
+                                    h('span', { className: 'dnm-group-count' }, group.entries.length + recordSuffix(t)),
+                                  ),
+                                  group.entries.map(({ track, index }) =>
+                                    h(TrackRow, {
+                                      key: track.id + '-' + index,
+                                      track,
+                                      index,
+                                      playing: currentId === track.id,
+                                      t,
+                                      onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
+                                    }),
+                                  ),
+                                ),
+                              )
+                            : visibleTracks.map(({ track, index }) =>
+                                h(TrackRow, {
+                                  key: track.id + '-' + index,
+                                  track,
+                                  index,
+                                  playing: currentId === track.id,
+                                  t,
+                                  onPlay: () => sharedPlayer.playQueue(playlist.tracks, index),
+                                }),
+                              ),
                       ),
               ),
       );
@@ -4155,8 +4201,13 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           : null,
         upcoming
           ? h(
-              'div',
-              { className: 'dnm-np-next' },
+              'button',
+              {
+                type: 'button',
+                className: 'dnm-np-next',
+                title: t('upNext'),
+                onClick: () => sharedPlayer.next(),
+              },
               h('span', { className: 'dnm-np-next-label' }, t('upNext')),
               h('span', { className: 'dnm-np-next-name' }, upcoming.name),
               h('span', { className: 'dnm-np-next-artist' }, artistText(upcoming, t)),
