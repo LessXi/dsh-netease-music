@@ -359,6 +359,16 @@ const ALLOWED_APIS = {
     },
     query: (p) => ({ limit: clampInt(p.limit, 1, 100, 50), offset: clampInt(p.offset, 0, 10000, 0) }),
   },
+  artistSongs: {
+    // 歌手全部歌曲，支持 offset/limit 分页（每页最多 100）
+    method: 'GET',
+    path: '/api/v1/artist/songs',
+    query: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌手 id 不合法');
+      return { id, offset: clampInt(p.offset, 0, 10000, 0), limit: clampInt(p.limit, 1, 100, 50) };
+    },
+  },
   albumDetail: {
     method: 'POST',
     path: (p) => {

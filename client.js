@@ -186,6 +186,7 @@ window.__ModuleLoader__.load({
       tracksTab: '曲目',
       commentsTab: '评论',
       albumsTab: '专辑',
+      allSongs: '全部歌曲',
       removeFromQueue: '从队列移除',
       clearQueue: '清空队列',
       expand: '展开',
@@ -368,6 +369,7 @@ window.__ModuleLoader__.load({
       tracksTab: 'Tracks',
       commentsTab: 'Comments',
       albumsTab: 'Albums',
+      allSongs: 'All songs',
       removeFromQueue: 'Remove from queue',
       clearQueue: 'Clear queue',
       expand: 'Expand',
@@ -3220,6 +3222,83 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       );
     }
 
+    // 歌手「全部歌曲」：分页拉取，支持搜索与排序
+    function ArtistAllSongs({ t, artistId }) {
+      const playerState = usePlayerState();
+      const currentId = playerState.track ? playerState.track.id : null;
+      const [songs, setSongs] = useState(null);
+      const [more, setMore] = useState(false);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+      const [trackQuery, setTrackQuery] = useState('');
+      const [sortBy, setSortBy] = useState('default');
+      const load = useCallback(
+        async (offset) => {
+          setLoading(true);
+          setError('');
+          try {
+            const data = await rpc('artistSongs', { id: artistId, offset: offset || 0, limit: 50 });
+            const list = normalizeTracks(data?.songs || []);
+            setSongs((previous) => (offset > 0 && previous ? previous.concat(list) : list));
+            setMore(Boolean(data?.more));
+          } catch (err) {
+            setError((err && err.message) || t('loadFailed'));
+          } finally {
+            setLoading(false);
+          }
+        },
+        [artistId, t],
+      );
+      useEffect(() => {
+        void load(0);
+      }, [load]);
+      const entries = (songs || []).map((track, index) => ({ track, index }));
+      const visible = sortTracks(filterTracks(entries, trackQuery, t), sortBy, t);
+      if (songs === null) return h(Skeleton, { rows: 10 });
+      return h(
+        React.Fragment,
+        null,
+        h(TrackToolbar, {
+          t,
+          query: trackQuery,
+          onQuery: setTrackQuery,
+          sortBy,
+          onSort: setSortBy,
+          count: visible.length,
+          total: songs.length,
+        }),
+        error ? h(ErrorBox, { message: error, onRetry: () => void load(0), retryLabel: t('retry') }) : null,
+        visible.length === 0
+          ? h(Empty, { label: t('queueNoMatch'), icon: h(IconSearch, { size: 24 }) })
+          : visible.map(({ track, index }) =>
+              h(TrackRow, {
+                key: track.id + '-' + index,
+                track,
+                index,
+                playing: currentId === track.id,
+                t,
+                onPlay: () => sharedPlayer.playQueue(songs, index),
+              }),
+            ),
+        more
+          ? h(
+              'div',
+              { style: { display: 'flex', justifyContent: 'center', marginTop: 14 } },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dnm-btn',
+                  disabled: loading,
+                  onClick: () => void load(songs.length),
+                },
+                loading ? t('loading') : t('loadMore'),
+              ),
+            )
+          : null,
+      );
+    }
+
     function ArtistView({ t, artistId, onBack, onOpenAlbum, onLogin }) {
       const detail = useAsync(async () => {
         const data = await rpc('artistDetail', { id: artistId });
@@ -3336,13 +3415,20 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                   ),
                   h(
                     'button',
+                    { type: 'button', className: 'dnm-tab' + (tab === 'all' ? ' active' : ''), onClick: () => setTab('all') },
+                    t('allSongs') + (artist.musicSize ? ' (' + artist.musicSize + ')' : ''),
+                  ),
+                  h(
+                    'button',
                     { type: 'button', className: 'dnm-tab' + (tab === 'albums' ? ' active' : ''), onClick: () => setTab('albums') },
                     t('albumsTab') + (artist.albumSize ? ' (' + artist.albumSize + ')' : ''),
                   ),
                 ),
                 tab === 'albums'
                   ? h(ArtistAlbums, { t, artistId, onOpenAlbum })
-                  : artist.hotSongs.length === 0
+                  : tab === 'all'
+                    ? h(ArtistAllSongs, { t, artistId })
+                    : artist.hotSongs.length === 0
                     ? h(Empty, { label: t('empty') })
                     : h(
                         React.Fragment,
