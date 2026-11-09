@@ -311,6 +311,44 @@ const ALLOWED_APIS = {
     },
     query: () => ({}),
   },
+  artistSub: {
+    // 关注歌手 / 取消关注
+    method: 'POST',
+    path: '/weapi/artist/sub',
+    payload: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌手 id 不合法');
+      return { artistId: id, artistIds: [id] };
+    },
+  },
+  artistUnsub: {
+    method: 'POST',
+    path: '/weapi/artist/unsub',
+    payload: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('歌手 id 不合法');
+      return { artistId: id, artistIds: [id] };
+    },
+  },
+  albumSub: {
+    // 收藏专辑 / 取消收藏
+    method: 'POST',
+    path: '/weapi/album/sub',
+    payload: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('专辑 id 不合法');
+      return { id };
+    },
+  },
+  albumUnsub: {
+    method: 'POST',
+    path: '/weapi/album/unsub',
+    payload: (p) => {
+      const id = normalizeId(p.id);
+      if (!id) throw new Error('专辑 id 不合法');
+      return { id };
+    },
+  },
   artistAlbums: {
     // 歌手专辑列表，老接口返回 hotAlbums 与 more
     method: 'GET',

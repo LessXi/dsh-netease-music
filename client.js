@@ -110,6 +110,12 @@ window.__ModuleLoader__.load({
       released: '发行',
       artistAlbums: '张专辑',
       artistSongs: '首单曲',
+      follow: '关注',
+      following: '已关注',
+      followLoginHint: '登录后可关注歌手',
+      saveAlbum: '收藏专辑',
+      albumSaved: '已收藏',
+      saveLoginHint: '登录后可收藏专辑',
       navDaily: '每日推荐',
       refresh: '刷新',
       navRadio: '私人FM',
@@ -274,6 +280,12 @@ window.__ModuleLoader__.load({
       released: 'Released',
       artistAlbums: 'albums',
       artistSongs: 'songs',
+      follow: 'Follow',
+      following: 'Following',
+      followLoginHint: 'Log in to follow',
+      saveAlbum: 'Save album',
+      albumSaved: 'Saved',
+      saveLoginHint: 'Log in to save',
       navDaily: 'Daily mix',
       refresh: 'Refresh',
       navRadio: 'Private FM',
@@ -433,6 +445,8 @@ window.__ModuleLoader__.load({
 .dnm-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-btn.primary{background:var(--dnm-red);border-color:transparent;color:#fff}
 .dnm-btn.primary:hover{background:var(--dnm-red);filter:brightness(1.08)}
+.dnm-btn.on{border-color:color-mix(in srgb,var(--dnm-red) 55%,transparent);color:var(--dnm-red)}
+.dnm-btn.on:hover{background:color-mix(in srgb,var(--dnm-red) 8%,transparent)}
 .dnm-btn:disabled{opacity:.5;cursor:default}
 .dnm-empty{padding:48px 16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:12px}
 .dnm-empty-icon{display:flex;align-items:center;justify-content:center;width:58px;height:58px;border-radius:20px;background:linear-gradient(145deg,var(--dsw-alias-bg-layer-1),var(--dsw-alias-bg-layer-2));color:var(--dsw-alias-label-tertiary);box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l2)}
@@ -2775,7 +2789,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       );
     }
 
-    function ArtistView({ t, artistId, onBack, onOpenAlbum }) {
+    function ArtistView({ t, artistId, onBack, onOpenAlbum, onLogin }) {
       const detail = useAsync(async () => {
         const data = await rpc('artistDetail', { id: artistId });
         const artist = data?.artist;
@@ -2787,13 +2801,34 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           briefDesc: artist.briefDesc || '',
           albumSize: artist.albumSize || 0,
           musicSize: artist.musicSize || 0,
+          followed: Boolean(artist.followed),
           hotSongs: normalizeTracks(data.hotSongs),
         };
       }, [artistId], { cacheKey: 'artist:' + artistId });
       const playerState = usePlayerState();
+      const session = useSession();
       const [tab, setTab] = useState('songs');
+      const [followedOverride, setFollowedOverride] = useState(null);
+      const [followBusy, setFollowBusy] = useState(false);
+      const [followError, setFollowError] = useState('');
       const currentId = playerState.track ? playerState.track.id : null;
       const artist = detail.data;
+      const following = followedOverride !== null ? followedOverride : Boolean(artist && artist.followed);
+      const toggleFollow = () => {
+        if (!artist) return;
+        if (!session.loggedIn) {
+          onLogin();
+          return;
+        }
+        if (followBusy) return;
+        const next = !following;
+        setFollowBusy(true);
+        setFollowError('');
+        rpc(next ? 'artistSub' : 'artistUnsub', { id: artist.id })
+          .then(() => setFollowedOverride(next))
+          .catch((error) => setFollowError(error?.message || t('loadFailed')))
+          .finally(() => setFollowBusy(false));
+      };
       return h(
         'div',
         { className: 'dnm-content' },
@@ -2840,7 +2875,20 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                         h(IconPlay, { size: 14 }),
                         t('playAll'),
                       ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dnm-btn' + (following ? ' on' : ''),
+                          disabled: followBusy,
+                          title: session.loggedIn ? undefined : t('followLoginHint'),
+                          onClick: toggleFollow,
+                        },
+                        h(IconUser, { size: 14 }),
+                        following ? t('following') : t('follow'),
+                      ),
                     ),
+                    followError ? h('p', { className: 'dnm-status error' }, followError) : null,
                   ),
                 ),
                 h(
@@ -2881,7 +2929,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
 
     // ---------- 视图：专辑 ----------
 
-    function AlbumView({ t, albumId, onBack }) {
+    function AlbumView({ t, albumId, onBack, onLogin }) {
       const detail = useAsync(async () => {
         const data = await rpc('albumDetail', { id: albumId });
         const album = data?.album;
@@ -2893,12 +2941,33 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           artistName: (album.artist && album.artist.name) || '',
           publishTime: album.publishTime || 0,
           description: album.description || '',
+          subscribed: Boolean(album.subscribed),
           songs: normalizeTracks(data.songs),
         };
       }, [albumId], { cacheKey: 'album:' + albumId });
       const playerState = usePlayerState();
+      const session = useSession();
+      const [savedOverride, setSavedOverride] = useState(null);
+      const [saveBusy, setSaveBusy] = useState(false);
+      const [saveError, setSaveError] = useState('');
       const currentId = playerState.track ? playerState.track.id : null;
       const album = detail.data;
+      const saved = savedOverride !== null ? savedOverride : Boolean(album && album.subscribed);
+      const toggleSave = () => {
+        if (!album) return;
+        if (!session.loggedIn) {
+          onLogin();
+          return;
+        }
+        if (saveBusy) return;
+        const next = !saved;
+        setSaveBusy(true);
+        setSaveError('');
+        rpc(next ? 'albumSub' : 'albumUnsub', { id: album.id })
+          .then(() => setSavedOverride(next))
+          .catch((error) => setSaveError(error?.message || t('loadFailed')))
+          .finally(() => setSaveBusy(false));
+      };
       const released = album && album.publishTime ? new Date(album.publishTime).toLocaleDateString() : '';
       return h(
         'div',
@@ -2944,7 +3013,20 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                         h(IconPlay, { size: 14 }),
                         t('playAll'),
                       ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dnm-btn' + (saved ? ' on' : ''),
+                          disabled: saveBusy,
+                          title: session.loggedIn ? undefined : t('saveLoginHint'),
+                          onClick: toggleSave,
+                        },
+                        h(IconHeart, { size: 14 }),
+                        saved ? t('albumSaved') : t('saveAlbum'),
+                      ),
                     ),
+                    saveError ? h('p', { className: 'dnm-status error' }, saveError) : null,
                   ),
                 ),
                 album.songs.length === 0
@@ -4940,9 +5022,9 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           onOpenAlbum: openAlbum,
         });
       } else if (view === 'artist' && artistId) {
-        content = h(ArtistView, { t, artistId, onBack: () => setView(artistFrom), onOpenAlbum: openAlbum });
+        content = h(ArtistView, { t, artistId, onBack: () => setView(artistFrom), onOpenAlbum: openAlbum, onLogin: () => setLoginOpen(true) });
       } else if (view === 'album' && albumId) {
-        content = h(AlbumView, { t, albumId, onBack: () => setView(albumFrom) });
+        content = h(AlbumView, { t, albumId, onBack: () => setView(albumFrom), onLogin: () => setLoginOpen(true) });
       } else if (view === 'likes') {
         content = h(LikesView, { t, onBack: () => setView('mine'), onLogin: () => setLoginOpen(true) });
       } else if (view === 'mine') {
