@@ -211,6 +211,15 @@ window.__ModuleLoader__.load({
       nextTrack: '下一首',
       miniPlayer: '迷你播放器',
       openPlayer: '打开网易云音乐',
+      shortcuts: '快捷键',
+      shortcutsHint: '在音乐界面里按 ? 随时打开这个列表',
+      shortcutPlayPause: '播放 / 暂停',
+      shortcutSeek: '后退 / 前进 5 秒',
+      shortcutTrack: '上一首 / 下一首',
+      shortcutVolume: '音量加 / 减',
+      shortcutMute: '静音 / 恢复',
+      shortcutHelp: '打开快捷键列表',
+      shortcutClose: '关闭弹窗或退出全屏',
     };
 
     const en = {
@@ -408,6 +417,15 @@ window.__ModuleLoader__.load({
       nextTrack: 'Next',
       miniPlayer: 'Mini player',
       openPlayer: 'Open NetEase Music',
+      shortcuts: 'Keyboard shortcuts',
+      shortcutsHint: 'Press ? anywhere in the music panel to open this list',
+      shortcutPlayPause: 'Play / pause',
+      shortcutSeek: 'Seek back / forward 5 seconds',
+      shortcutTrack: 'Previous / next track',
+      shortcutVolume: 'Volume up / down',
+      shortcutMute: 'Mute / unmute',
+      shortcutHelp: 'Open this shortcut list',
+      shortcutClose: 'Close dialog or exit full screen',
     };
 
     // ---------- 样式 ----------
@@ -551,6 +569,16 @@ window.__ModuleLoader__.load({
 .dnm-info-key{color:var(--dsw-alias-label-tertiary);flex:0 0 auto}
 .dnm-info-value{color:var(--dsw-alias-label-primary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dnm-info-hint{font-size:12px;color:var(--dsw-alias-label-tertiary);text-align:center}
+.dnm-help{width:440px;max-width:calc(100vw - 48px);gap:14px}
+.dnm-help-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dnm-help-title{font-size:15px;font-weight:600}
+.dnm-help-rows{display:flex;flex-direction:column;gap:2px}
+.dnm-help-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:.5px solid var(--dsw-alias-border-l1)}
+.dnm-help-row:last-child{border-bottom:0}
+.dnm-help-keys{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.dnm-kbd{font-family:inherit;font-size:11px;line-height:1;padding:4px 7px;border-radius:6px;background:var(--dsw-alias-bg-layer-1);border:.5px solid var(--dsw-alias-border-l2);box-shadow:0 1px 0 var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
+.dnm-help-label{font-size:12.5px;color:var(--dsw-alias-label-secondary);text-align:right}
+.dnm-help-hint{margin:2px 0 0;font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
 .dnm-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-icon-btn:disabled{opacity:.4;cursor:default;background:transparent}
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dnm-red);color:#fff;box-shadow:0 4px 14px -4px color-mix(in srgb,var(--dnm-red) 60%,transparent);transition:transform .18s,opacity .18s}
@@ -822,6 +850,7 @@ body:not([data-ds-dark-theme]) .dnm-mini{background:color-mix(in srgb,#fff 94%,t
 body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)}
 body:not([data-ds-dark-theme]) .dnm-suggest{background:#fff;box-shadow:0 18px 44px -20px rgba(15,17,21,.32),0 0 0 .5px rgba(15,17,21,.06)}
 body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-theme]) .dnm-suggest-item.active{background:rgba(15,17,21,.055)}
+body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,21,.12);box-shadow:0 1px 0 rgba(15,17,21,.06)}
     `;
 
     function ensureCss() {
@@ -1722,6 +1751,14 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         ],
       });
     const IconHeart = ({ size = 14 }) => svgIcon(size, 'M12 21s-7.5-4.7-9.3-9A5.2 5.2 0 0112 6.4 5.2 5.2 0 0121.3 12c-1.8 4.3-9.3 9-9.3 9z');
+    const IconKeyboard = ({ size = 15 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [
+          h('rect', { key: 'r', x: 2.5, y: 6, width: 19, height: 12, rx: 2, stroke: 'currentColor', strokeWidth: 1.7 }),
+          h('path', { key: 'k', d: 'M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M6 13.5h.01M9.5 13.5h.01M13 13.5h.01M16.5 13.5h.01M8 16.5h8', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' }),
+        ],
+      });
     const IconRefresh = ({ size = 14 }) => svgIcon(size, 'M12 5V2L7 6l5 4V7a5 5 0 11-5 5H5a7 7 0 107-7z');
     const IconMusic = ({ size = 14 }) => svgIcon(size, 'M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zM19 16a3 3 0 11-3-3 3 3 0 013 3z');
     const IconRadio = ({ size = 14 }) => svgIcon(size, 'M12 3a9 9 0 100 18 9 9 0 000-18zm0 3a6 6 0 110 12 6 6 0 010-12zm0 3a3 3 0 100 6 3 3 0 000-6z');
@@ -4992,7 +5029,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
 
     // ---------- 播放条 ----------
 
-    function PlayerBar({ t, onOpenNowPlaying }) {
+    function PlayerBar({ t, onOpenNowPlaying, onOpenHelp }) {
       const state = usePlayerState();
       const session = useSession();
       const likedIds = useLikedIds();
@@ -5175,6 +5212,16 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
             'button',
             {
               type: 'button',
+              className: 'dnm-icon-btn dnm-player-help',
+              title: t('shortcuts'),
+              onClick: onOpenHelp,
+            },
+            h(IconKeyboard, { size: 15 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
               className: 'dnm-icon-btn dnm-player-like' + (liked ? ' liked' : ''),
               title: !track ? t('nowPlaying') : session.loggedIn ? (liked ? t('unlike') : t('like')) : t('likeHint'),
               disabled: !track || !session.loggedIn,
@@ -5217,6 +5264,67 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
               onChange: (event) => sharedPlayer.setVolume(Number(event.target.value)),
             }),
           ),
+        ),
+      );
+    }
+
+    // ---------- 快捷键帮助 ----------
+
+    function HelpDialog({ t, onClose }) {
+      const rows = [
+        { keys: ['Space'], label: t('shortcutPlayPause') },
+        { keys: ['←', '→'], label: t('shortcutSeek') },
+        { keys: ['Ctrl', '←', '→'], label: t('shortcutTrack') },
+        { keys: ['↑', '↓'], label: t('shortcutVolume') },
+        { keys: ['M'], label: t('shortcutMute') },
+        { keys: ['?'], label: t('shortcutHelp') },
+        { keys: ['Esc'], label: t('shortcutClose') },
+      ];
+      useEffect(() => {
+        const onKey = (event) => {
+          if (event.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [onClose]);
+      return h(
+        'div',
+        { className: 'dnm-modal-mask', onClick: onClose },
+        h(
+          'div',
+          {
+            className: 'dnm-modal dnm-help',
+            role: 'dialog',
+            'aria-label': t('shortcuts'),
+            onClick: (event) => event.stopPropagation(),
+          },
+          h(
+            'div',
+            { className: 'dnm-help-head' },
+            h('span', { className: 'dnm-help-title' }, t('shortcuts')),
+            h(
+              'button',
+              { type: 'button', className: 'dnm-icon-btn', title: t('close'), onClick: onClose },
+              h(IconClose, { size: 13 }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'dnm-help-rows' },
+            rows.map((row, index) =>
+              h(
+                'div',
+                { key: index, className: 'dnm-help-row' },
+                h(
+                  'span',
+                  { className: 'dnm-help-keys' },
+                  row.keys.map((key) => h('kbd', { key, className: 'dnm-kbd' }, key)),
+                ),
+                h('span', { className: 'dnm-help-label' }, row.label),
+              ),
+            ),
+          ),
+          h('p', { className: 'dnm-help-hint' }, t('shortcutsHint')),
         ),
       );
     }
@@ -6045,8 +6153,24 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const [artistFrom, setArtistFrom] = useState('search');
       const [keyword, setKeyword] = useState('');
       const [loginOpen, setLoginOpen] = useState(false);
+      const [helpOpen, setHelpOpen] = useState(false);
       const state = useSession();
       const playerState = usePlayerState();
+
+      useEffect(() => {
+        const onKey = (event) => {
+          const target = event.target;
+          if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
+            return;
+          }
+          if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+            event.preventDefault();
+            setHelpOpen(true);
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, []);
 
       useEffect(() => {
         sharedPlayer.setPanelVisible(true);
@@ -6262,9 +6386,10 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
               : h('div', { className: 'dnm-scroll' }, content),
           ),
         ),
-        h(PlayerBar, { t, onOpenNowPlaying: openNowPlaying }),
+        h(PlayerBar, { t, onOpenNowPlaying: openNowPlaying, onOpenHelp: () => setHelpOpen(true) }),
         h(ContextMenu, { t, onOpenArtist: openArtist, onOpenAlbum: openAlbum }),
         h(Toast),
+        helpOpen ? h(HelpDialog, { t, onClose: () => setHelpOpen(false) }) : null,
         loginOpen
           ? h(LoginDialog, {
               t,
