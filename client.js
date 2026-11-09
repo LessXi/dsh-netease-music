@@ -1589,16 +1589,54 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
 
     // ---------- 数据加载 hook ----------
 
-    function useAsync(loader, deps) {
-      const [state, setState] = useState({ status: 'loading', data: null, error: '' });
+    // 列表数据缓存：返回上一页时直接复用，避免每次重新请求导致闪骨架
+    const DATA_CACHE_LIMIT = 40;
+    const dataCache = new Map();
+
+    function cacheGet(key) {
+      return dataCache.get(key);
+    }
+
+    function cachePut(key, value) {
+      if (!key) return;
+      if (dataCache.has(key)) dataCache.delete(key);
+      dataCache.set(key, value);
+      while (dataCache.size > DATA_CACHE_LIMIT) {
+        const oldest = dataCache.keys().next();
+        if (oldest.done) break;
+        dataCache.delete(oldest.value);
+      }
+    }
+
+    function useAsync(loader, deps, options) {
+      const cacheKey = options && options.cacheKey;
+      const cached = cacheKey ? cacheGet(cacheKey) : undefined;
+      const [state, setState] = useState(() =>
+        cached !== undefined
+          ? { status: 'ready', data: cached, error: '' }
+          : { status: 'loading', data: null, error: '' },
+      );
       const [nonce, setNonce] = useState(0);
+      const forceRef = useRef(false);
       useEffect(() => {
         let cancelled = false;
+        if (cacheKey && nonce === 0 && !forceRef.current) {
+          const hit = cacheGet(cacheKey);
+          if (hit !== undefined) {
+            setState({ status: 'ready', data: hit, error: '' });
+            return () => {
+              cancelled = true;
+            };
+          }
+        }
+        forceRef.current = false;
         setState({ status: 'loading', data: null, error: '' });
         Promise.resolve()
           .then(loader)
           .then((data) => {
-            if (!cancelled) setState({ status: 'ready', data, error: '' });
+            if (cancelled) return;
+            if (cacheKey) cachePut(cacheKey, data);
+            setState({ status: 'ready', data, error: '' });
           })
           .catch((error) => {
             if (!cancelled) setState({ status: 'error', data: null, error: String((error && error.message) || error) });
@@ -1608,7 +1646,13 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [...deps, nonce]);
-      return { ...state, reload: () => setNonce((value) => value + 1) };
+      return {
+        ...state,
+        reload: () => {
+          forceRef.current = true;
+          setNonce((value) => value + 1);
+        },
+      };
     }
 
     // ---------- 歌词解析 ----------
@@ -1946,7 +1990,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
         if (!uid) return [];
         const data = await rpc('userPlaylist', { uid, limit: 100 });
         return Array.isArray(data && data.playlist) ? data.playlist : [];
-      }, [uid]);
+      }, [uid], { cacheKey: uid ? 'userPlaylists:' + uid : undefined });
       const [busyId, setBusyId] = useState(0);
       const [doneName, setDoneName] = useState('');
       const [error, setError] = useState('');
@@ -2041,11 +2085,11 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       const charts = useAsync(async () => {
         const data = await rpc('toplist');
         return Array.isArray(data?.list) ? data.list : [];
-      }, []);
+      }, [], { cacheKey: 'toplist' });
       const playlists = useAsync(async () => {
         const data = await rpc('personalized', { limit: 12 });
         return Array.isArray(data?.result) ? data.result : [];
-      }, []);
+      }, [], { cacheKey: 'discoverPlaylists' });
       const featured = (charts.data || []).filter((chart) =>
         ['飙升榜', '新歌榜', '热歌榜', '原创榜', '说唱榜', '电音榜'].includes(chart.name),
       );
@@ -2131,7 +2175,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       const charts = useAsync(async () => {
         const data = await rpc('toplist');
         return Array.isArray(data?.list) ? data.list : [];
-      }, []);
+      }, [], { cacheKey: 'toplist' });
       return h(
         'div',
         { className: 'dnm-content' },
@@ -2197,7 +2241,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           updateTime: Number(playlist.updateTime) || 0,
           tracks: normalizeTracks(playlist.tracks),
         };
-      }, [playlistId]);
+      }, [playlistId], { cacheKey: 'playlist:' + playlistId });
       const playerState = usePlayerState();
       const session = useSession();
       const [tab, setTab] = useState('tracks');
@@ -2417,7 +2461,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           albums: Array.isArray(payload.albums) ? payload.albums : [],
           playlists: Array.isArray(payload.playlists) ? payload.playlists : [],
         };
-      }, [keyword, type]);
+      }, [keyword, type], { cacheKey: keyword ? 'search:' + type + ':' + keyword : undefined });
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
       const data = result.data;
@@ -2431,7 +2475,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
         const payload = await rpc('searchHot');
         const list = payload?.result?.hots ?? [];
         return list.map((item) => item?.first).filter((item) => typeof item === 'string' && item);
-      }, [keyword]);
+      }, [keyword], { cacheKey: keyword ? undefined : 'searchHot' });
       const pickKeyword = (value) => {
         setInput(value);
         onSearch(value);
@@ -2645,7 +2689,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           size: Number(album.size) || 0,
           type: album.type || '',
         }));
-      }, [artistId]);
+      }, [artistId], { cacheKey: 'artistAlbums:' + artistId });
       if (albums.status === 'loading') return h(Skeleton, { rows: 8 });
       if (albums.status === 'error') return h(ErrorBox, { message: albums.error, onRetry: albums.reload, retryLabel: t('retry') });
       const list = albums.data || [];
@@ -2685,7 +2729,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           musicSize: artist.musicSize || 0,
           hotSongs: normalizeTracks(data.hotSongs),
         };
-      }, [artistId]);
+      }, [artistId], { cacheKey: 'artist:' + artistId });
       const playerState = usePlayerState();
       const [tab, setTab] = useState('songs');
       const currentId = playerState.track ? playerState.track.id : null;
@@ -2791,7 +2835,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           description: album.description || '',
           songs: normalizeTracks(data.songs),
         };
-      }, [albumId]);
+      }, [albumId], { cacheKey: 'album:' + albumId });
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
       const album = detail.data;
@@ -2882,7 +2926,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
         if (!state.loggedIn) return [];
         const data = await rpc('dailyRecommend');
         return normalizeTracks(data?.data?.dailySongs ?? data?.recommend ?? []);
-      }, [state.loggedIn]);
+      }, [state.loggedIn], { cacheKey: state.loggedIn ? 'daily' : undefined });
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
       const tracks = daily.data || [];
@@ -3032,7 +3076,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           if (result && Array.isArray(result.songs)) songs.push(...result.songs);
         }
         return { ids, tracks: normalizeTracks(songs) };
-      }, [uid]);
+      }, [uid], { cacheKey: uid ? 'likes:' + uid : undefined });
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
       const tracks = (likes.data && likes.data.tracks) || [];
@@ -3105,12 +3149,12 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
         if (!uid) return [];
         const data = await rpc('userPlaylist', { uid, limit: 100 });
         return Array.isArray(data?.playlist) ? data.playlist : [];
-      }, [uid]);
+      }, [uid], { cacheKey: uid ? 'userPlaylists:' + uid : undefined });
       const daily = useAsync(async () => {
         if (!state.loggedIn) return [];
         const data = await rpc('recommendSongs').catch(() => null);
         return normalizeTracks(data?.recommend ?? data?.data?.dailySongs ?? []);
-      }, [state.loggedIn]);
+      }, [state.loggedIn], { cacheKey: state.loggedIn ? 'recommend' : undefined });
       const recent = useHistory();
       if (!state.loggedIn) {
         return h(
