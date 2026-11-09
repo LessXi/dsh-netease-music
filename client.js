@@ -135,6 +135,11 @@ window.__ModuleLoader__.load({
       playNext: '下一首播放',
       addToQueue: '加入播放队列',
       addToPlaylist: '收藏到歌单',
+      viewArtist: '查看歌手',
+      viewAlbum: '查看专辑',
+      copyLink: '复制歌曲链接',
+      linkCopied: '已复制歌曲链接',
+      copyFailed: '复制失败，请手动复制',
       selectPlaylist: '选择歌单',
       noPlaylists: '还没有创建歌单',
       addedToPlaylist: '已收藏到「{name}」',
@@ -284,6 +289,11 @@ window.__ModuleLoader__.load({
       playNext: 'Play next',
       addToQueue: 'Add to queue',
       addToPlaylist: 'Add to playlist',
+      viewArtist: 'View artist',
+      viewAlbum: 'View album',
+      copyLink: 'Copy song link',
+      linkCopied: 'Song link copied',
+      copyFailed: 'Copy failed, please copy manually',
       selectPlaylist: 'Choose a playlist',
       noPlaylists: 'You have no playlists yet',
       addedToPlaylist: 'Added to "{name}"',
@@ -586,6 +596,7 @@ body:not([data-ds-dark-theme]) .dnm-np-controls .dnm-icon-btn:not(:disabled):hov
 .dnm-np-controls .dnm-icon-btn.play:not(:disabled):hover{background:var(--dnm-red);opacity:.94}
 .dnm-np-progress{display:flex;align-items:center;gap:10px;margin-top:18px;font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .dnm-np-progress .dnm-range{flex:1 1 auto;min-width:0}
+.dnm-toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:80;padding:9px 16px;border-radius:10px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.4;box-shadow:0 12px 32px -12px rgba(0,0,0,.45),0 0 0 .5px var(--dsw-alias-border-l2);animation:dnm-fade-in .2s ease both;pointer-events:none;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dnm-content{position:relative;isolation:isolate}
 .dnm-hero-bg{position:absolute;left:calc(-1 * clamp(18px,3vw,32px));right:calc(-1 * clamp(18px,3vw,32px));top:-20px;height:360px;z-index:-1;overflow:hidden;pointer-events:none}
 .dnm-hero-bg-img{position:absolute;inset:-20%;background-size:cover;background-position:center;filter:blur(58px) saturate(1.5);opacity:.32;transform:scale(1.15)}
@@ -683,11 +694,17 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       const albumName = typeof raw.album === 'string' ? raw.album : (albumObject && albumObject.name) || '';
       const coverUrl = (albumObject && albumObject.picUrl) || raw.coverUrl || raw.picUrl || '';
       const alias = Array.isArray(raw.alia) && raw.alia.length > 0 ? raw.alia[0] : typeof raw.alias === 'string' ? raw.alias : '';
+      const artistIds = artistList
+        .map((artist) => (artist && typeof artist === 'object' && artist.id ? artist.id : null))
+        .filter(Boolean);
+      const albumId = (albumObject && albumObject.id) || raw.albumId || null;
       return {
         id: raw.id,
         name: raw.name || '未知歌曲',
         artists,
+        artistIds,
         album: albumName,
+        albumId,
         coverUrl,
         duration: raw.dt ?? raw.duration ?? 0,
         fee: raw.fee ?? 0,
@@ -1312,6 +1329,50 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       return useSyncExternalStore(contextMenuStore.subscribe, contextMenuStore.getSnapshot, contextMenuStore.getSnapshot);
     }
 
+    // 轻量提示条：复制链接、操作结果之类的一次性反馈
+    const toastStore = (() => {
+      let message = '';
+      let timer = null;
+      const listeners = new Set();
+      const emit = () => {
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* 忽略订阅者异常 */
+          }
+        }
+      };
+      return {
+        show(text) {
+          message = String(text || '');
+          emit();
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => {
+            message = '';
+            emit();
+          }, 1800);
+        },
+        getSnapshot() {
+          return message;
+        },
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+    })();
+
+    function useToast() {
+      return useSyncExternalStore(toastStore.subscribe, toastStore.getSnapshot, toastStore.getSnapshot);
+    }
+
+    function Toast() {
+      const message = useToast();
+      if (!message) return null;
+      return h('div', { className: 'dnm-toast', role: 'status' }, message);
+    }
+
     function usePlayerState() {
       return useSyncExternalStore(sharedPlayer.subscribe, sharedPlayer.getSnapshot, sharedPlayer.getSnapshot);
     }
@@ -1786,7 +1847,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
     }
 
     // 曲目右键菜单：任意列表行右键唤起，可立即播放 / 下一首播放 / 加入队列 / 收藏到歌单
-    function ContextMenu({ t }) {
+    function ContextMenu({ t, onOpenArtist, onOpenAlbum }) {
       const menu = useContextMenu();
       const session = useSession();
       const [addingTrack, setAddingTrack] = useState(null);
@@ -1800,7 +1861,35 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       }, [menu]);
       const track = menu ? menu.track : null;
       const left = menu ? Math.max(8, Math.min(menu.x, window.innerWidth - 212)) : 0;
-      const top = menu ? Math.max(8, Math.min(menu.y, window.innerHeight - 232)) : 0;
+      const top = menu ? Math.max(8, Math.min(menu.y, window.innerHeight - 330)) : 0;
+      const copyLink = async () => {
+        if (!track) return;
+        const link = 'https://music.163.com/#/song?id=' + track.id;
+        let ok = false;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(link);
+            ok = true;
+          }
+        } catch {
+          /* 权限被拒时走降级方案 */
+        }
+        if (!ok) {
+          try {
+            const area = document.createElement('textarea');
+            area.value = link;
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            ok = document.execCommand('copy');
+            document.body.removeChild(area);
+          } catch {
+            ok = false;
+          }
+        }
+        toastStore.show(ok ? t('linkCopied') : t('copyFailed'));
+      };
       const item = (label, onClick) =>
         h(
           'button',
@@ -1836,7 +1925,12 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
                 item(t('playNow'), () => sharedPlayer.playQueue([track], 0)),
                 item(t('playNext'), () => sharedPlayer.playNext(track)),
                 item(t('addToQueue'), () => sharedPlayer.addToQueue(track)),
+                track.artistIds && track.artistIds.length > 0 && onOpenArtist
+                  ? item(t('viewArtist'), () => onOpenArtist(track.artistIds[0]))
+                  : null,
+                track.albumId && onOpenAlbum ? item(t('viewAlbum'), () => onOpenAlbum(track.albumId)) : null,
                 session.loggedIn ? item(t('addToPlaylist'), () => setAddingTrack(track)) : null,
+                item(t('copyLink'), () => void copyLink()),
               ),
             )
           : null,
@@ -4343,6 +4437,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       const [artistId, setArtistId] = useState(null);
       const [albumId, setAlbumId] = useState(null);
       const [albumFrom, setAlbumFrom] = useState('search');
+      const [artistFrom, setArtistFrom] = useState('search');
       const [keyword, setKeyword] = useState('');
       const [searchInput, setSearchInput] = useState('');
       const [loginOpen, setLoginOpen] = useState(false);
@@ -4366,12 +4461,13 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
 
       const openArtist = useCallback((id) => {
         setArtistId(id);
+        setArtistFrom((previous) => (view === 'artist' || view === 'nowplaying' ? previous : view));
         setView('artist');
-      }, []);
+      }, [view]);
 
       const openAlbum = useCallback((id) => {
         setAlbumId(id);
-        setAlbumFrom(view === 'artist' ? 'artist' : 'search');
+        setAlbumFrom((previous) => (view === 'album' || view === 'nowplaying' ? previous : view));
         setView('album');
       }, [view]);
 
@@ -4413,7 +4509,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           onOpenAlbum: openAlbum,
         });
       } else if (view === 'artist' && artistId) {
-        content = h(ArtistView, { t, artistId, onBack: () => setView('search'), onOpenAlbum: openAlbum });
+        content = h(ArtistView, { t, artistId, onBack: () => setView(artistFrom), onOpenAlbum: openAlbum });
       } else if (view === 'album' && albumId) {
         content = h(AlbumView, { t, albumId, onBack: () => setView(albumFrom) });
       } else if (view === 'likes') {
@@ -4553,7 +4649,8 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
           ),
         ),
         h(PlayerBar, { t, onOpenNowPlaying: openNowPlaying }),
-        h(ContextMenu, { t }),
+        h(ContextMenu, { t, onOpenArtist: openArtist, onOpenAlbum: openAlbum }),
+        h(Toast),
         loginOpen
           ? h(LoginDialog, {
               t,
