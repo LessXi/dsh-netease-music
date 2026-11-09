@@ -167,6 +167,11 @@ window.__ModuleLoader__.load({
       expand: '展开',
       collapse: '收起',
       updatedAt: '更新于 {n}',
+      pause: '暂停',
+      previousTrack: '上一首',
+      nextTrack: '下一首',
+      miniPlayer: '迷你播放器',
+      openPlayer: '打开网易云音乐',
     };
 
     const en = {
@@ -321,6 +326,11 @@ window.__ModuleLoader__.load({
       expand: 'Expand',
       collapse: 'Collapse',
       updatedAt: 'updated {n}',
+      pause: 'Pause',
+      previousTrack: 'Previous',
+      nextTrack: 'Next',
+      miniPlayer: 'Mini player',
+      openPlayer: 'Open NetEase Music',
     };
 
     // ---------- 样式 ----------
@@ -560,6 +570,21 @@ window.__ModuleLoader__.load({
 .dnm-comment-hot-tag{font-size:11px;color:var(--dnm-red);border:.5px solid var(--dnm-red);border-radius:999px;padding:0 6px;flex:0 0 auto}
 .dnm-comment-section{margin:6px 0 2px;font-size:13px;color:var(--dsw-alias-label-secondary);font-weight:600}
 @media (max-width:760px){.dnm-np-left{display:none}.dnm-artist-head,.dnm-album-head{flex-direction:column}.dnm-artist-avatar{width:96px;height:96px}.dnm-album-cover{width:130px;height:130px}.dnm-likes-cover{width:130px;height:130px}}
+/* ---------- 迷你播放器（面板不在前台时显示） ---------- */
+.dnm-mini{position:fixed;right:22px;bottom:22px;z-index:60;display:flex;align-items:center;gap:10px;width:min(330px,calc(100vw - 44px));padding:8px 10px 12px;border-radius:14px;--dnm-red:#ec4141;background:color-mix(in srgb,var(--dsw-alias-bg-overlay) 94%,transparent);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:.5px solid var(--dsw-alias-border-l2);box-shadow:0 18px 44px -18px rgba(0,0,0,.55);animation:dnm-mini-in .28s cubic-bezier(.2,.8,.2,1) both}
+@keyframes dnm-mini-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.dnm-mini-main{display:flex;align-items:center;gap:9px;flex:1 1 auto;min-width:0;background:none;border:0;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.dnm-mini-cover{width:38px;height:38px;border-radius:8px;flex:0 0 auto}
+.dnm-mini-meta{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dnm-mini-name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-mini-artist{font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-mini-controls{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+.dnm-mini-btn{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:50%;background:none;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0;transition:background .16s,color .16s}
+.dnm-mini-btn:hover{background:rgba(255,255,255,.1);color:var(--dsw-alias-label-primary)}
+.dnm-mini-btn.play{background:var(--dnm-red);color:#fff;width:30px;height:30px;flex:0 0 auto}
+.dnm-mini-btn.play:hover{filter:brightness(1.06);color:#fff}
+.dnm-mini-progress{position:absolute;left:10px;right:10px;bottom:5px;height:2px;border-radius:2px;background:rgba(127,127,127,.22);overflow:hidden}
+.dnm-mini-progress span{display:block;height:100%;background:var(--dnm-red);border-radius:2px;transition:width .2s linear}
 /* ---------- 视觉增强：沉浸背景、毛玻璃、悬浮卡片与过渡 ---------- */
 .dnm-root{position:relative}
 .dnm-ambient{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none}
@@ -628,6 +653,8 @@ body:not([data-ds-dark-theme]) .dnm-modal{box-shadow:0 26px 62px -24px rgba(15,1
 body:not([data-ds-dark-theme]) .dnm-tabs{background:rgba(15,17,21,.05)}
 body:not([data-ds-dark-theme]) .dnm-tab.active{background:#fff;box-shadow:0 1px 2px rgba(15,17,21,.1)}
 body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,17,21,.1)}
+body:not([data-ds-dark-theme]) .dnm-mini{background:color-mix(in srgb,#fff 94%,transparent);box-shadow:0 18px 44px -20px rgba(15,17,21,.35)}
+body:not([data-ds-dark-theme]) .dnm-mini-btn:hover{background:rgba(15,17,21,.06)}
     `;
 
     function ensureCss() {
@@ -4471,6 +4498,71 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
       });
     }
 
+    // 面板不在前台时，右下角显示一个迷你播放器，方便边干活边控制音乐
+    function MiniPlayer({ t, onOpen }) {
+      const state = usePlayerState();
+      const track = state.track;
+      if (state.panelVisible || !track) return null;
+      const ratio = state.duration > 0 ? Math.min(1, Math.max(0, state.currentTime / state.duration)) : 0;
+      return h(
+        'div',
+        { className: 'dnm-mini', role: 'complementary', 'aria-label': t('miniPlayer') },
+        h(
+          'button',
+          { type: 'button', className: 'dnm-mini-main', onClick: onOpen, title: t('openPlayer') },
+          h(Cover, { url: track.coverUrl, className: 'dnm-mini-cover', alt: t('coverAlt') }),
+          h(
+            'span',
+            { className: 'dnm-mini-meta' },
+            h('span', { className: 'dnm-mini-name' }, track.name),
+            h('span', { className: 'dnm-mini-artist' }, artistText(track, t)),
+          ),
+        ),
+        h(
+          'span',
+          { className: 'dnm-mini-controls' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-mini-btn',
+              onClick: () => sharedPlayer.previous(),
+              title: t('previousTrack'),
+              'aria-label': t('previousTrack'),
+            },
+            h(IconPrev, { size: 14 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-mini-btn play',
+              onClick: () => sharedPlayer.toggle(),
+              title: state.playing ? t('pause') : t('play'),
+              'aria-label': state.playing ? t('pause') : t('play'),
+            },
+            state.loading
+              ? h('span', { className: 'dnm-spinner', style: { width: 12, height: 12 } })
+              : state.playing
+                ? h(IconPause, { size: 14 })
+                : h(IconPlay, { size: 14 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-mini-btn',
+              onClick: () => sharedPlayer.next(),
+              title: t('nextTrack'),
+              'aria-label': t('nextTrack'),
+            },
+            h(IconNext, { size: 14 }),
+          ),
+        ),
+        h('span', { className: 'dnm-mini-progress', 'aria-hidden': 'true' }, h('span', { style: { width: (ratio * 100).toFixed(2) + '%' } })),
+      );
+    }
+
     // ---------- 主面板 ----------
 
     function NeteaseMusicPage(props) {
@@ -4712,7 +4804,7 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
     // ---------- 模块导出 ----------
 
     return {
-      inject: ['slots', 'locale'],
+      inject: ['slots', 'locale', 'layout'],
       apply(ctx) {
         ensureCss();
         ctx.effect(() => () => removeCss(), 'netease-music: styles');
@@ -4756,6 +4848,17 @@ body:not([data-ds-dark-theme]) .dnm-search{background:#fff;border-color:rgba(15,
               id: 'netease-music-audio',
             },
             AudioHost,
+          ),
+        );
+        ctx.slots.inject('shell.overlay', () =>
+          ctx.slots.register(
+            {
+              name: 'shell.overlay',
+              id: 'netease-music-mini',
+              locale: NS,
+              inject: () => ({ t, onOpen: () => ctx.layout.selectPanel(PANEL_ID) }),
+            },
+            MiniPlayer,
           ),
         );
       },
