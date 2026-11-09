@@ -563,7 +563,7 @@ window.__ModuleLoader__.load({
 .dnm-np-tab{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1;padding:6px 13px;border-radius:7px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .dnm-np-tab.active{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-weight:600}
 .dnm-np-body{flex:1 1 auto;min-height:0;display:flex;gap:clamp(20px,4vw,44px);padding:12px clamp(18px,4vw,44px) 20px;overflow:hidden}
-.dnm-np-left{width:min(300px,34%);flex:0 0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding-top:12px;min-height:0}
+.dnm-np-left{width:min(300px,34%);flex:0 0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding-top:12px;min-height:0;overflow-y:auto;scrollbar-gutter:stable;padding-bottom:8px}
 .dnm-np-cover{width:100%;aspect-ratio:1/1;border-radius:18px;object-fit:cover;background:var(--dsw-alias-bg-layer-2);box-shadow:0 16px 44px rgba(0,0,0,.26)}
 .dnm-np-name{font-size:19px;font-weight:600;margin:2px 0 0;line-height:1.35;word-break:break-word;max-width:100%}
 .dnm-np-artist{font-size:13px;color:var(--dsw-alias-label-secondary);margin:0;max-width:100%;word-break:break-word}
@@ -723,11 +723,12 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 @keyframes dnm-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.008)}}
 @media (prefers-reduced-motion:reduce){.dnm-np-cover{animation:none}}
 .dnm-np-actions{display:flex;align-items:center;gap:6px;margin-top:4px}
-.dnm-np-next{display:flex;flex-direction:column;gap:2px;margin-top:16px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);border:.5px solid var(--dsw-alias-border-l1);max-width:min(260px,100%);font:inherit;text-align:left;cursor:pointer;transition:background .16s,border-color .16s}
-.dnm-np-next:hover{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent);border-color:var(--dsw-alias-border-l2)}
-.dnm-np-next-label{font-size:11px;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary)}
-.dnm-np-next-name{font-size:13px;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dnm-np-next-artist{font-size:12px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-np-next{display:flex;flex-direction:column;gap:1px;margin-top:16px;padding:8px 6px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 60%,transparent);border:.5px solid var(--dsw-alias-border-l1);max-width:min(280px,100%)}
+.dnm-np-next-label{font-size:11px;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);padding:2px 8px 4px}
+.dnm-np-next-item{display:flex;flex-direction:row;align-items:baseline;gap:8px;width:100%;padding:5px 8px;border:0;border-radius:7px;background:none;font:inherit;text-align:left;cursor:pointer;transition:background .14s}
+.dnm-np-next-item:hover{background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 70%,transparent)}
+.dnm-np-next-name{flex:1 1 auto;font-size:13px;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dnm-np-next-artist{flex:0 1 auto;font-size:11px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
 .dnm-np-controls{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:20px}
 .dnm-np-controls .dnm-icon-btn{width:40px;height:40px;transition:background .16s,transform .16s}
 .dnm-np-controls .dnm-icon-btn:not(:disabled):hover{background:rgba(255,255,255,.1)}
@@ -4027,7 +4028,12 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const track = state.track;
       const liked = track ? likedIds.has(track.id) : false;
       const queueList = state.queue || [];
-      const upcoming = track && state.index >= 0 && state.index + 1 < queueList.length ? queueList[state.index + 1] : null;
+      const upcomingList =
+        track && state.index >= 0
+          ? queueList
+              .slice(state.index + 1, state.index + 4)
+              .map((item, offset) => ({ item, index: state.index + 1 + offset }))
+          : [];
       const lyric = useLyric(track ? track.id : null);
       const lines = (lyric.data && lyric.data.lines) || [];
       const [activeIndex, setActiveIndex] = useState(-1);
@@ -4199,18 +4205,25 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
               ),
             )
           : null,
-        upcoming
+        upcomingList.length > 0
           ? h(
-              'button',
-              {
-                type: 'button',
-                className: 'dnm-np-next',
-                title: t('upNext'),
-                onClick: () => sharedPlayer.next(),
-              },
-              h('span', { className: 'dnm-np-next-label' }, t('upNext')),
-              h('span', { className: 'dnm-np-next-name' }, upcoming.name),
-              h('span', { className: 'dnm-np-next-artist' }, artistText(upcoming, t)),
+              'div',
+              { className: 'dnm-np-next' },
+              h('div', { className: 'dnm-np-next-label' }, t('upNext')),
+              upcomingList.map(({ item, index }) =>
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    key: item.id + '-' + index,
+                    className: 'dnm-np-next-item',
+                    title: item.name + ' · ' + artistText(item, t),
+                    onClick: () => void sharedPlayer.playTrack(item, { queue: queueList, index }),
+                  },
+                  h('span', { className: 'dnm-np-next-name' }, item.name),
+                  h('span', { className: 'dnm-np-next-artist' }, artistText(item, t)),
+                ),
+              ),
             )
           : null,
       );
