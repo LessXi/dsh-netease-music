@@ -2920,6 +2920,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       { key: 'albums', label: 'searchAlbums', type: 10 },
       { key: 'playlists', label: 'searchPlaylists', type: 1000 },
     ];
+    const SEARCH_PAGE_SIZE = 30;
 
     function SearchView({ t, keyword, onSearch, onOpenPlaylist, onOpenArtist, onOpenAlbum }) {
       const cardPlay = useCardPlay(t);
@@ -2931,19 +2932,70 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const result = useAsync(async () => {
         if (!keyword) return null;
         const kind = SEARCH_TYPES.find((item) => item.key === type) || SEARCH_TYPES[0];
-        const data = await rpc('search', { q: keyword, type: kind.type, limit: kind.key === 'playlists' ? 30 : 50 });
+        const data = await rpc('search', { q: keyword, type: kind.type, limit: SEARCH_PAGE_SIZE, offset: 0 });
         const payload = data?.result ?? {};
+        const total = Number(
+          payload.songCount ?? payload.artistCount ?? payload.albumCount ?? payload.playlistCount ?? 0,
+        );
         return {
           songs: normalizeTracks(payload.songs),
           artists: Array.isArray(payload.artists) ? payload.artists : [],
           albums: Array.isArray(payload.albums) ? payload.albums : [],
           playlists: Array.isArray(payload.playlists) ? payload.playlists : [],
+          total: Number.isFinite(total) ? total : 0,
         };
       }, [keyword, type], { cacheKey: keyword ? 'search:' + type + ':' + keyword : undefined });
       const playerState = usePlayerState();
       const currentId = playerState.track ? playerState.track.id : null;
       const data = result.data;
-      const items = data ? data[type] || [] : [];
+      const [extra, setExtra] = useState({ key: '', items: [] });
+      const [moreLoading, setMoreLoading] = useState(false);
+      const [moreDone, setMoreDone] = useState(false);
+      const listKey = type + ':' + keyword;
+      useEffect(() => {
+        setExtra({ key: '', items: [] });
+        setMoreDone(false);
+      }, [listKey]);
+      const baseItems = data ? data[type] || [] : [];
+      const items = extra.key === listKey ? baseItems.concat(extra.items) : baseItems;
+      const total = data ? data.total : 0;
+      const canMore = !moreDone && items.length > 0 && (total === 0 || items.length < total);
+      const loadMore = async () => {
+        if (moreLoading) return;
+        setMoreLoading(true);
+        try {
+          const kind = SEARCH_TYPES.find((item) => item.key === type) || SEARCH_TYPES[0];
+          const page = await rpc('search', { q: keyword, type: kind.type, limit: SEARCH_PAGE_SIZE, offset: items.length });
+          const payload = page?.result ?? {};
+          const next = type === 'songs' ? normalizeTracks(payload.songs) : payload[type] || [];
+          if (next.length === 0) {
+            setMoreDone(true);
+          } else {
+            setExtra((previous) => ({
+              key: listKey,
+              items: (previous.key === listKey ? previous.items : []).concat(next),
+            }));
+          }
+        } catch (error) {
+          toastStore.show(error && error.message ? error.message : t('loadFailed'));
+        } finally {
+          setMoreLoading(false);
+        }
+      };
+      const moreRef = useRef(null);
+      useEffect(() => {
+        if (!canMore) return undefined;
+        const node = moreRef.current;
+        if (!node || typeof IntersectionObserver !== 'function') return undefined;
+        const observer = new IntersectionObserver(
+          (entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+          },
+          { rootMargin: '240px' },
+        );
+        observer.observe(node);
+        return () => observer.disconnect();
+      }, [canMore, listKey, items.length]);
       const [history, setHistory] = useState(() => searchHistory.read());
       useEffect(() => {
         setHistory(searchHistory.read());
@@ -3038,16 +3090,16 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
               h(IconPlay, { size: 14 }),
               t('playAll'),
             ),
-            h('span', { className: 'dnm-track-count' }, data.songs.length + recordSuffix(t)),
+            h('span', { className: 'dnm-track-count' }, items.length + recordSuffix(t)),
           ),
-          data.songs.map((track, index) =>
+          items.map((track, index) =>
             h(TrackRow, {
               key: track.id + '-' + index,
               track,
               index,
               playing: currentId === track.id,
               t,
-              onPlay: () => sharedPlayer.playQueue(data.songs, index),
+              onPlay: () => sharedPlayer.playQueue(items, index),
             }),
           ),
         );
@@ -3055,7 +3107,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         body = h(
           'div',
           { className: 'dnm-grid' },
-          data.artists.map((artist) =>
+          items.map((artist) =>
             h(
               'div',
               {
@@ -3086,7 +3138,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         body = h(
           'div',
           { className: 'dnm-grid' },
-          data.albums.map((album) =>
+          items.map((album) =>
             h(
               'div',
               {
@@ -3121,7 +3173,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         body = h(
           'div',
           { className: 'dnm-grid' },
-          data.playlists.map((playlist) =>
+          items.map((playlist) =>
             h(
               'div',
               {
@@ -3201,6 +3253,21 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           ),
         ),
         body,
+        canMore
+          ? h(
+              'div',
+              {
+                ref: moreRef,
+                className: 'dnm-more-row',
+                style: { marginTop: 14, display: 'flex', justifyContent: 'center' },
+              },
+              h(
+                'button',
+                { type: 'button', className: 'dnm-btn', disabled: moreLoading, onClick: loadMore },
+                moreLoading ? t('loading') : t('loadMore'),
+              ),
+            )
+          : null,
       );
     }
 
