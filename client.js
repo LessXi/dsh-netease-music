@@ -134,6 +134,12 @@ window.__ModuleLoader__.load({
       playNow: '立即播放',
       playNext: '下一首播放',
       addToQueue: '加入播放队列',
+      addToPlaylist: '收藏到歌单',
+      selectPlaylist: '选择歌单',
+      noPlaylists: '还没有创建歌单',
+      addedToPlaylist: '已收藏到「{name}」',
+      addToPlaylistFailed: '收藏失败，请稍后重试',
+      playlistSongCount: '{n} 首',
       comments: '评论',
       hotComments: '热门评论',
       noComments: '还没有评论',
@@ -277,6 +283,12 @@ window.__ModuleLoader__.load({
       playNow: 'Play now',
       playNext: 'Play next',
       addToQueue: 'Add to queue',
+      addToPlaylist: 'Add to playlist',
+      selectPlaylist: 'Choose a playlist',
+      noPlaylists: 'You have no playlists yet',
+      addedToPlaylist: 'Added to "{name}"',
+      addToPlaylistFailed: 'Could not add, try again later',
+      playlistSongCount: '{n} songs',
       comments: 'Comments',
       hotComments: 'Hot comments',
       noComments: 'No comments yet',
@@ -398,6 +410,18 @@ window.__ModuleLoader__.load({
 .dnm-menu{position:fixed;min-width:180px;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.3);padding:6px;display:flex;flex-direction:column;gap:2px}
 .dnm-menu-title{font-size:11px;color:var(--dsw-alias-label-tertiary);padding:4px 8px 6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dnm-menu-item{border:0;background:none;text-align:left;color:var(--dsw-alias-label-primary);font-size:13px;padding:7px 10px;border-radius:6px;cursor:pointer;transition:background .15s}
+.dnm-playlist-pick-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:0 0 auto}
+.dnm-playlist-pick{display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow:auto;scrollbar-gutter:stable;margin-top:2px}
+.dnm-playlist-pick-item{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;text-align:left;color:var(--dsw-alias-label-primary);font-size:13px;padding:6px;border-radius:8px;cursor:pointer;transition:background .15s}
+.dnm-playlist-pick-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dnm-playlist-pick-item:disabled{cursor:default;opacity:.6}
+.dnm-playlist-pick-item.done{outline:1px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
+.dnm-playlist-pick-cover{width:38px;height:38px;border-radius:6px;flex:0 0 auto;object-fit:cover}
+.dnm-playlist-pick-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.dnm-playlist-pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dnm-playlist-pick-count{font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dnm-playlist-pick-busy{color:var(--dsw-alias-label-secondary);font-size:12px}
+.dnm-playlist-done{font-size:12px;color:var(--dsw-alias-state-success-primary);text-align:left}
 .dnm-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dnm-icon-btn:disabled{opacity:.4;cursor:default;background:transparent}
 .dnm-icon-btn.play{width:38px;height:38px;background:var(--dsw-alias-brand-primary);color:#fff}
@@ -1579,9 +1603,11 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // 曲目右键菜单：任意列表行右键唤起，可立即播放 / 下一首播放 / 加入队列
+    // 曲目右键菜单：任意列表行右键唤起，可立即播放 / 下一首播放 / 加入队列 / 收藏到歌单
     function ContextMenu({ t }) {
       const menu = useContextMenu();
+      const session = useSession();
+      const [addingTrack, setAddingTrack] = useState(null);
       useEffect(() => {
         if (!menu) return undefined;
         const onKey = (event) => {
@@ -1590,10 +1616,9 @@ window.__ModuleLoader__.load({
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
       }, [menu]);
-      if (!menu) return null;
-      const track = menu.track;
-      const left = Math.max(8, Math.min(menu.x, window.innerWidth - 212));
-      const top = Math.max(8, Math.min(menu.y, window.innerHeight - 168));
+      const track = menu ? menu.track : null;
+      const left = menu ? Math.max(8, Math.min(menu.x, window.innerWidth - 212)) : 0;
+      const top = menu ? Math.max(8, Math.min(menu.y, window.innerHeight - 232)) : 0;
       const item = (label, onClick) =>
         h(
           'button',
@@ -1609,22 +1634,128 @@ window.__ModuleLoader__.load({
           label,
         );
       return h(
+        React.Fragment,
+        null,
+        menu
+          ? h(
+              'div',
+              {
+                className: 'dnm-menu-mask',
+                onClick: () => contextMenuStore.close(),
+                onContextMenu: (event) => {
+                  event.preventDefault();
+                  contextMenuStore.close();
+                },
+              },
+              h(
+                'div',
+                { className: 'dnm-menu', style: { left, top }, onClick: (event) => event.stopPropagation() },
+                h('div', { className: 'dnm-menu-title' }, track.name),
+                item(t('playNow'), () => sharedPlayer.playQueue([track], 0)),
+                item(t('playNext'), () => sharedPlayer.playNext(track)),
+                item(t('addToQueue'), () => sharedPlayer.addToQueue(track)),
+                session.loggedIn ? item(t('addToPlaylist'), () => setAddingTrack(track)) : null,
+              ),
+            )
+          : null,
+        addingTrack ? h(AddToPlaylistDialog, { t, track: addingTrack, onClose: () => setAddingTrack(null) }) : null,
+      );
+    }
+
+    // 收藏到歌单：列出我的歌单，选一个把曲目加进去
+    function AddToPlaylistDialog({ t, track, onClose }) {
+      const session = useSession();
+      const uid = session.profile ? session.profile.userId : 0;
+      const playlists = useAsync(async () => {
+        if (!uid) return [];
+        const data = await rpc('userPlaylist', { uid, limit: 100 });
+        return Array.isArray(data && data.playlist) ? data.playlist : [];
+      }, [uid]);
+      const [busyId, setBusyId] = useState(0);
+      const [doneName, setDoneName] = useState('');
+      const [error, setError] = useState('');
+
+      const add = async (playlist) => {
+        if (busyId) return;
+        setBusyId(playlist.id);
+        setError('');
+        try {
+          const result = await rpc('playlistAddTrack', { pid: playlist.id, id: track.id });
+          if (result && typeof result.code === 'number' && result.code !== 200) {
+            throw new Error(result.message || t('addToPlaylistFailed'));
+          }
+          setDoneName(playlist.name);
+        } catch (caught) {
+          setError(caught && caught.message ? caught.message : t('addToPlaylistFailed'));
+        } finally {
+          setBusyId(0);
+        }
+      };
+
+      let body;
+      if (playlists.status === 'loading') {
+        body = h(Loading, { label: t('loading') });
+      } else if (playlists.status === 'error') {
+        body = h(ErrorBox, { message: playlists.error, onRetry: playlists.reload, retryLabel: t('retry') });
+      } else if ((playlists.data || []).length === 0) {
+        body = h(Empty, { label: t('noPlaylists') });
+      } else {
+        body = h(
+          'div',
+          { className: 'dnm-playlist-pick' },
+          (playlists.data || []).map((playlist) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                key: playlist.id,
+                className: 'dnm-playlist-pick-item' + (doneName === playlist.name ? ' done' : ''),
+                disabled: Boolean(busyId),
+                onClick: () => void add(playlist),
+              },
+              h(Cover, { url: playlist.coverImgUrl, className: 'dnm-playlist-pick-cover' }),
+              h(
+                'div',
+                { className: 'dnm-playlist-pick-body' },
+                h('div', { className: 'dnm-playlist-pick-name' }, playlist.name),
+                h(
+                  'div',
+                  { className: 'dnm-playlist-pick-count' },
+                  t('playlistSongCount').replace('{n}', String(playlist.trackCount || 0)),
+                ),
+              ),
+              busyId === playlist.id ? h('span', { className: 'dnm-playlist-pick-busy' }, '…') : null,
+            ),
+          ),
+        );
+      }
+
+      return h(
         'div',
-        {
-          className: 'dnm-menu-mask',
-          onClick: () => contextMenuStore.close(),
-          onContextMenu: (event) => {
-            event.preventDefault();
-            contextMenuStore.close();
-          },
-        },
+        { className: 'dnm-modal-mask', onClick: onClose },
         h(
           'div',
-          { className: 'dnm-menu', style: { left, top }, onClick: (event) => event.stopPropagation() },
-          h('div', { className: 'dnm-menu-title' }, track.name),
-          item(t('playNow'), () => sharedPlayer.playQueue([track], 0)),
-          item(t('playNext'), () => sharedPlayer.playNext(track)),
-          item(t('addToQueue'), () => sharedPlayer.addToQueue(track)),
+          {
+            className: 'dnm-modal',
+            role: 'dialog',
+            'aria-modal': 'true',
+            style: { width: 420, alignItems: 'stretch' },
+            onClick: (event) => event.stopPropagation(),
+          },
+          h(
+            'div',
+            { className: 'dnm-playlist-pick-head' },
+            h('h2', { className: 'dnm-modal-title' }, t('addToPlaylist')),
+            h(
+              'button',
+              { type: 'button', className: 'dnm-icon-btn', title: t('close'), onClick: onClose },
+              h(IconClose, { size: 14 }),
+            ),
+          ),
+          h('p', { className: 'dnm-modal-hint', style: { textAlign: 'left' } }, track.name),
+          doneName ? h('div', { className: 'dnm-playlist-done' }, t('addedToPlaylist').replace('{name}', doneName)) : null,
+          error ? h('div', { className: 'dnm-status error' }, error) : null,
+          body,
         ),
       );
     }

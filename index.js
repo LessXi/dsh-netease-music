@@ -284,6 +284,18 @@ const ALLOWED_APIS = {
       return { id, t: p.subscribe ? '1' : '0' };
     },
   },
+  playlistAddTrack: {
+    // 把一首歌加入自己的歌单（收藏到歌单）
+    method: 'POST',
+    path: '/weapi/playlist/manipulate/tracks',
+    payload: (p) => {
+      const pid = normalizeId(p.pid);
+      const id = normalizeId(p.id);
+      if (!pid) throw new Error('歌单 id 不合法');
+      if (!id) throw new Error('歌曲 id 不合法');
+      return { op: 'add', pid, trackIds: JSON.stringify([id]), tracks: JSON.stringify([id]) };
+    },
+  },
   artistDetail: {
     // 老接口一次返回歌手信息 + 热门 50 首（hotSongs）
     method: 'GET',
