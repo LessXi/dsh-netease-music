@@ -3713,6 +3713,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           artistName: (album.artist && album.artist.name) || '',
           publishTime: album.publishTime || 0,
           description: album.description || '',
+          company: album.company || '',
           subscribed: Boolean(album.subscribed),
           songs: normalizeTracks(data.songs),
         };
@@ -3724,6 +3725,7 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
       const [saveError, setSaveError] = useState('');
       const [trackQuery, setTrackQuery] = useState('');
       const [sortBy, setSortBy] = useState('default');
+      const [expanded, setExpanded] = useState(false);
       const currentId = playerState.track ? playerState.track.id : null;
       const album = detail.data;
       const saved = savedOverride !== null ? savedOverride : Boolean(album && album.subscribed);
@@ -3772,7 +3774,9 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                     h(
                       'p',
                       { className: 'dnm-album-meta' },
-                      [album.artistName, released ? t('released') + ' ' + released : ''].filter(Boolean).join(' · '),
+                      [album.artistName, album.company, released ? t('released') + ' ' + released : '']
+                        .filter(Boolean)
+                        .join(' · '),
                     ),
                     album.songs.length ? h('p', { className: 'dnm-artist-meta' }, album.songs.length + ' ' + t('songCount')) : null,
                     h(
@@ -3815,6 +3819,28 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
                       ),
                     ),
                     saveError ? h('p', { className: 'dnm-status error' }, saveError) : null,
+                    album.description
+                      ? h(
+                          React.Fragment,
+                          null,
+                          h(
+                            'p',
+                            { className: 'dnm-playlist-desc' + (expanded ? ' expanded' : '') },
+                            album.description,
+                          ),
+                          album.description.length > 60
+                            ? h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: 'dnm-playlist-desc-toggle',
+                                  onClick: () => setExpanded((value) => !value),
+                                },
+                                expanded ? t('collapse') : t('expand'),
+                              )
+                            : null,
+                        )
+                      : null,
                   ),
                 ),
                 album.songs.length === 0
