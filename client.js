@@ -175,6 +175,9 @@ window.__ModuleLoader__.load({
       infoId: '歌曲 ID',
       infoLoading: '正在读取播放文件信息…',
       infoUnavailable: '暂无可用播放文件（可能需要登录或会员）',
+      chartSearchPlaceholder: '搜索榜单',
+      chartsCount: '个榜单',
+      noChartMatch: '没有找到相关榜单',
       selectPlaylist: '选择歌单',
       noPlaylists: '还没有创建歌单',
       addedToPlaylist: '已收藏到「{name}」',
@@ -369,6 +372,9 @@ window.__ModuleLoader__.load({
       infoId: 'Song ID',
       infoLoading: 'Reading audio file info…',
       infoUnavailable: 'No playable audio file (sign-in or membership may be required)',
+      chartSearchPlaceholder: 'Search charts',
+      chartsCount: 'charts',
+      noChartMatch: 'No matching charts',
       selectPlaylist: 'Choose a playlist',
       noPlaylists: 'You have no playlists yet',
       addedToPlaylist: 'Added to "{name}"',
@@ -2626,6 +2632,16 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
         const data = await rpc('toplist');
         return Array.isArray(data?.list) ? data.list : [];
       }, [], { cacheKey: 'toplist' });
+      const [query, setQuery] = useState('');
+      const all = charts.data || [];
+      const needle = query.trim().toLowerCase();
+      const list = needle
+        ? all.filter((chart) =>
+            [chart.name, chart.updateFrequency]
+              .filter(Boolean)
+              .some((field) => String(field).toLowerCase().includes(needle)),
+          )
+        : all;
       return h(
         'div',
         { className: 'dnm-content' },
@@ -2635,26 +2651,68 @@ body:not([data-ds-dark-theme]) .dnm-suggest-item:hover,body:not([data-ds-dark-th
           : charts.status === 'error'
             ? h(ErrorBox, { message: charts.error, onRetry: charts.reload, retryLabel: t('retry') })
             : h(
-                'div',
-                { className: 'dnm-chart-list' },
-                (charts.data || []).map((chart) =>
+                React.Fragment,
+                null,
+                h(
+                  'div',
+                  { className: 'dnm-track-toolbar' },
                   h(
-                    'button',
-                    {
-                      type: 'button',
-                      key: chart.id,
-                      className: 'dnm-chart',
-                      onClick: () => onOpenPlaylist(chart.id),
-                    },
-                    h(Cover, { url: chart.coverImgUrl, className: 'dnm-chart-cover' }),
-                    h(
-                      'div',
-                      { className: 'dnm-chart-info' },
-                      h('div', { className: 'dnm-chart-name' }, chart.name),
-                      h('div', { className: 'dnm-chart-desc' }, (chart.updateFrequency || '') + (chart.trackCount ? ' · ' + chart.trackCount + recordSuffix(t) : '')),
-                    ),
+                    'div',
+                    { className: 'dnm-track-search' },
+                    h(IconSearch, { size: 14 }),
+                    h('input', {
+                      value: query,
+                      placeholder: t('chartSearchPlaceholder'),
+                      onChange: (event) => setQuery(event.target.value),
+                    }),
+                    query
+                      ? h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dnm-queue-search-clear',
+                            title: t('clear'),
+                            onClick: () => setQuery(''),
+                          },
+                          h(IconClose, { size: 11 }),
+                        )
+                      : null,
+                  ),
+                  h(
+                    'span',
+                    { className: 'dnm-track-count' },
+                    needle ? list.length + ' / ' + all.length : all.length + ' ' + t('chartsCount'),
                   ),
                 ),
+                list.length === 0
+                  ? h(Empty, { label: t('noChartMatch'), icon: h(IconSearch, { size: 24 }) })
+                  : h(
+                      'div',
+                      { className: 'dnm-chart-list' },
+                      list.map((chart) =>
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            key: chart.id,
+                            className: 'dnm-chart',
+                            onClick: () => onOpenPlaylist(chart.id),
+                          },
+                          h(Cover, { url: chart.coverImgUrl, className: 'dnm-chart-cover' }),
+                          h(
+                            'div',
+                            { className: 'dnm-chart-info' },
+                            h('div', { className: 'dnm-chart-name' }, chart.name),
+                            h(
+                              'div',
+                              { className: 'dnm-chart-desc' },
+                              (chart.updateFrequency || '') +
+                                (chart.trackCount ? ' · ' + chart.trackCount + recordSuffix(t) : ''),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
               ),
       );
     }
