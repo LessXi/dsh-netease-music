@@ -694,23 +694,69 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // 播放器会话持久化：刷新页面后恢复队列、当前曲目、音量与播放模式
+    const PLAYER_STATE_KEY = 'dsh-netease-music:player-state';
+
+    function readPlayerState() {
+      try {
+        const raw = window.localStorage.getItem(PLAYER_STATE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || typeof data !== 'object') return null;
+        const queue = Array.isArray(data.queue) ? data.queue.map(normalizeTrack).filter(Boolean).slice(0, 100) : [];
+        const track = normalizeTrack(data.track);
+        const index = Number.isInteger(data.index) ? data.index : -1;
+        const volume = typeof data.volume === 'number' ? Math.max(0, Math.min(1, data.volume)) : 0.8;
+        const mode = ['list', 'single', 'shuffle'].includes(data.mode) ? data.mode : 'list';
+        const resume = typeof data.currentTime === 'number' && Number.isFinite(data.currentTime) ? data.currentTime : 0;
+        return { track, queue, index, volume, mode, resume };
+      } catch {
+        return null;
+      }
+    }
+
+    function writePlayerState(snapshot) {
+      try {
+        window.localStorage.setItem(
+          PLAYER_STATE_KEY,
+          JSON.stringify({
+            track: snapshot.track,
+            queue: snapshot.queue.slice(0, 100),
+            index: snapshot.index,
+            volume: snapshot.volume,
+            mode: snapshot.mode,
+            currentTime: Math.round(snapshot.currentTime || 0),
+            at: Date.now(),
+          }),
+        );
+      } catch {
+        /* 隐私模式或配额不足时忽略 */
+      }
+    }
+
     function createPlayer() {
+      const restored = readPlayerState();
       let state = {
         audio: null,
-        track: null,
-        queue: [],
-        index: -1,
+        track: restored && restored.track ? restored.track : null,
+        queue: restored ? restored.queue : [],
+        index: restored ? restored.index : -1,
         playing: false,
         loading: false,
         error: '',
-        currentTime: 0,
-        duration: 0,
-        volume: 0.8,
-        mode: 'list',
+        currentTime: restored && restored.track ? restored.resume : 0,
+        duration: restored && restored.track ? (restored.track.duration || 0) / 1000 : 0,
+        volume: restored ? restored.volume : 0.8,
+        mode: restored ? restored.mode : 'list',
         quality: readQuality(),
         url: '',
         panelVisible: false,
       };
+      // 刷新后首次点播放时，从上次的进度继续（只在同一首歌时生效）
+      let resumeTime = restored && restored.track ? restored.resume : 0;
+      let resumeTrackId = restored && restored.track ? restored.track.id : null;
+      let saveTimer = null;
+      let saveSignature = '';
       const listeners = new Set();
       const emit = () => {
         for (const listener of [...listeners]) {
@@ -721,11 +767,27 @@ window.__ModuleLoader__.load({
           }
         }
       };
+      const scheduleSave = () => {
+        const signature = [state.track ? state.track.id : '', state.index, state.volume, state.mode, state.queue.length].join('|');
+        if (signature === saveSignature) return;
+        saveSignature = signature;
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          saveTimer = null;
+          writePlayerState(state);
+        }, 600);
+      };
       const patch = (next) => {
         state = { ...state, ...next };
         emit();
+        scheduleSave();
       };
       let playToken = 0;
+      try {
+        window.addEventListener('pagehide', () => writePlayerState(state));
+      } catch {
+        /* 环境不支持时忽略 */
+      }
 
       function bindAudio(audio) {
         if (state.audio === audio) return;
@@ -805,6 +867,16 @@ window.__ModuleLoader__.load({
             return;
           }
           audio.src = url;
+          if (resumeTrackId !== null && normalized.id === resumeTrackId && resumeTime > 1) {
+            const target = resumeTime;
+            resumeTime = 0;
+            resumeTrackId = null;
+            try {
+              audio.currentTime = target;
+            } catch {
+              /* 元数据就绪前设置失败则忽略 */
+            }
+          }
           const playPromise = audio.play();
           if (playPromise && typeof playPromise.catch === 'function') {
             playPromise.catch((error) => {
@@ -825,6 +897,11 @@ window.__ModuleLoader__.load({
       function toggle() {
         const audio = state.audio;
         if (!audio || !state.track) return;
+        if (!audio.src) {
+          // 刷新后恢复的会话还没有直链，重新取一次
+          void playTrack(state.track, { queue: state.queue, index: state.index });
+          return;
+        }
         if (audio.paused) {
           void audio.play().catch(() => patch({ error: '播放失败' }));
         } else {
@@ -4050,6 +4127,7 @@ window.__ModuleLoader__.load({
 
     function AudioHost() {
       const audioRef = useRef(null);
+      const lastVolumeRef = useRef(0.8);
       const state = usePlayerState();
       useEffect(() => {
         const audio = audioRef.current;
@@ -4112,17 +4190,48 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      // 面板内空格键播放/暂停：输入框和按钮聚焦时不拦截
+      // 面板内键盘快捷键：空格播放/暂停、←/→ 快退快进、Ctrl+←/→ 切歌、M 静音
       useEffect(() => {
         if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
         const onKeyDown = (event) => {
-          if (event.key !== ' ' && event.code !== 'Space') return;
           const target = event.target;
           const tag = target && target.tagName ? String(target.tagName).toLowerCase() : '';
           if (tag === 'input' || tag === 'textarea' || tag === 'select' || (target && target.isContentEditable)) return;
           if (!document.querySelector('.dnm-root')) return;
-          event.preventDefault();
-          sharedPlayer.toggle();
+          const snapshot = sharedPlayer.getSnapshot();
+          if (!snapshot.track) return;
+          if (event.key === ' ' || event.code === 'Space') {
+            event.preventDefault();
+            sharedPlayer.toggle();
+            return;
+          }
+          if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+            event.preventDefault();
+            const direction = event.key === 'ArrowRight' ? 1 : -1;
+            if (event.ctrlKey || event.metaKey) {
+              if (direction > 0) sharedPlayer.next();
+              else sharedPlayer.previous();
+              return;
+            }
+            sharedPlayer.seek((snapshot.currentTime || 0) + direction * 5);
+            return;
+          }
+          if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            const delta = event.key === 'ArrowUp' ? 0.05 : -0.05;
+            sharedPlayer.setVolume(Math.round(((snapshot.volume || 0) + delta) * 100) / 100);
+            return;
+          }
+          if (event.key === 'm' || event.key === 'M') {
+            event.preventDefault();
+            const current = snapshot.volume || 0;
+            if (current > 0) {
+              lastVolumeRef.current = current;
+              sharedPlayer.setVolume(0);
+            } else {
+              sharedPlayer.setVolume(lastVolumeRef.current || 0.8);
+            }
+          }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
