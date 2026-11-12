@@ -221,6 +221,7 @@ window.__ModuleLoader__.load({
       shortcutHelp: '打开快捷键列表',
       shortcutClose: '关闭弹窗或退出全屏',
       zoomCover: '查看大图',
+      hideMini: '隐藏迷你播放器',
     };
 
     const en = {
@@ -428,6 +429,7 @@ window.__ModuleLoader__.load({
       shortcutHelp: 'Open this shortcut list',
       shortcutClose: 'Close dialog or exit full screen',
       zoomCover: 'View larger',
+      hideMini: 'Hide mini player',
     };
 
     // ---------- 样式 ----------
@@ -772,6 +774,8 @@ body:not([data-ds-dark-theme]) .dnm-lyric-full .dnm-lyric-line.active{color:var(
 .dnm-mini-btn:hover{background:rgba(255,255,255,.1);color:var(--dsw-alias-label-primary)}
 .dnm-mini-btn.play{background:var(--dnm-red);color:#fff;width:30px;height:30px;flex:0 0 auto}
 .dnm-mini-btn.play:hover{filter:brightness(1.06);color:#fff}
+.dnm-mini-close{width:22px;height:22px;margin-left:-2px;opacity:.72}
+.dnm-mini-close:hover{opacity:1}
 .dnm-mini-progress{position:absolute;left:10px;right:10px;bottom:5px;height:2px;border-radius:2px;background:rgba(127,127,127,.22);overflow:hidden}
 .dnm-mini-progress span{display:block;height:100%;background:var(--dnm-red);border-radius:2px;transition:width .2s linear}
 /* ---------- 视觉增强：沉浸背景、毛玻璃、悬浮卡片与过渡 ---------- */
@@ -1654,6 +1658,59 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
 
     function useCoverZoom() {
       return useSyncExternalStore(coverZoomStore.subscribe, coverZoomStore.getSnapshot, coverZoomStore.getSnapshot);
+    }
+
+    // 迷你播放器显隐：用户可能觉得它一直浮着挡内容，可以收起；回到音乐面板时自动恢复
+    const MINI_HIDDEN_KEY = 'dsh-netease-music:mini-hidden';
+    const miniBarStore = (() => {
+      let hidden = false;
+      try {
+        hidden = window.localStorage.getItem(MINI_HIDDEN_KEY) === '1';
+      } catch {
+        hidden = false;
+      }
+      const listeners = new Set();
+      const emit = () => {
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* 忽略订阅者异常 */
+          }
+        }
+      };
+      const persist = () => {
+        try {
+          window.localStorage.setItem(MINI_HIDDEN_KEY, hidden ? '1' : '0');
+        } catch {
+          /* 隐私模式忽略 */
+        }
+      };
+      return {
+        hide() {
+          if (hidden) return;
+          hidden = true;
+          persist();
+          emit();
+        },
+        reset() {
+          if (!hidden) return;
+          hidden = false;
+          persist();
+          emit();
+        },
+        getSnapshot() {
+          return hidden;
+        },
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+    })();
+
+    function useMiniBar() {
+      return useSyncExternalStore(miniBarStore.subscribe, miniBarStore.getSnapshot, miniBarStore.getSnapshot);
     }
 
     function CoverLightbox({ t }) {
@@ -5988,8 +6045,9 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
     // 面板不在前台时，右下角显示一个迷你播放器，方便边干活边控制音乐
     function MiniPlayer({ t, onOpen }) {
       const state = usePlayerState();
+      const hidden = useMiniBar();
       const track = state.track;
-      if (state.panelVisible || !track) return null;
+      if (state.panelVisible || !track || hidden) return null;
       const ratio = state.duration > 0 ? Math.min(1, Math.max(0, state.currentTime / state.duration)) : 0;
       return h(
         'div',
@@ -6044,6 +6102,17 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
               'aria-label': t('nextTrack'),
             },
             h(IconNext, { size: 14 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-mini-btn dnm-mini-close',
+              onClick: () => miniBarStore.hide(),
+              title: t('hideMini'),
+              'aria-label': t('hideMini'),
+            },
+            h(IconClose, { size: 12 }),
           ),
         ),
         h('span', { className: 'dnm-mini-progress', 'aria-hidden': 'true' }, h('span', { style: { width: (ratio * 100).toFixed(2) + '%' } })),
@@ -6293,6 +6362,10 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
         if (state.status === 'idle') void sharedSession.refresh();
         return () => sharedPlayer.setPanelVisible(false);
       }, [state.status]);
+
+      useEffect(() => {
+        miniBarStore.reset();
+      }, []);
 
       useEffect(() => {
         if (state.loggedIn && state.profile) void likedStore.ensure(state.profile.userId);
