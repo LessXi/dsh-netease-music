@@ -222,6 +222,7 @@ window.__ModuleLoader__.load({
       shortcutClose: '关闭弹窗或退出全屏',
       zoomCover: '查看大图',
       hideMini: '隐藏迷你播放器',
+      showMini: '显示迷你播放器',
     };
 
     const en = {
@@ -430,6 +431,7 @@ window.__ModuleLoader__.load({
       shortcutClose: 'Close dialog or exit full screen',
       zoomCover: 'View larger',
       hideMini: 'Hide mini player',
+      showMini: 'Show mini player',
     };
 
     // ---------- 样式 ----------
@@ -546,6 +548,7 @@ window.__ModuleLoader__.load({
 .dnm-quality-btn{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:1;padding:5px 8px;border-radius:999px;cursor:pointer;flex:0 0 auto;transition:color .15s,border-color .15s}
 .dnm-quality-btn:hover:not(:disabled){color:var(--dnm-red);border-color:var(--dnm-red)}
 .dnm-quality-btn:disabled{opacity:.35;cursor:default}
+.dnm-icon-btn.on{color:var(--dnm-red)}
 .dnm-menu-mask{position:fixed;inset:0;z-index:60}
 .dnm-menu{position:fixed;min-width:180px;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.3);padding:6px;display:flex;flex-direction:column;gap:2px}
 .dnm-menu-title{font-size:11px;color:var(--dsw-alias-label-tertiary);padding:4px 8px 6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1693,9 +1696,14 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
           persist();
           emit();
         },
-        reset() {
+        show() {
           if (!hidden) return;
           hidden = false;
+          persist();
+          emit();
+        },
+        toggle() {
+          hidden = !hidden;
           persist();
           emit();
         },
@@ -1894,6 +1902,14 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
         children: [
           h('path', { key: 's', d: 'M4 9.5h3l4-3.5v12l-4-3.5H4z', fill: 'currentColor' }),
           h('path', { key: 'w', d: 'M15.5 8.5a5 5 0 010 7M18 6a8.5 8.5 0 010 12', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }),
+        ],
+      });
+    const IconMini = ({ size = 15 }) =>
+      svgIcon(size, null, {
+        fill: 'none',
+        children: [
+          h('rect', { key: 'a', x: 2.8, y: 5.4, width: 18.4, height: 12.6, rx: 2, stroke: 'currentColor', strokeWidth: 1.6 }),
+          h('rect', { key: 'b', x: 12.1, y: 11.4, width: 6.4, height: 4.6, rx: 1, stroke: 'currentColor', strokeWidth: 1.5 }),
         ],
       });
     const IconHeart = ({ size = 14 }) => svgIcon(size, 'M12 21s-7.5-4.7-9.3-9A5.2 5.2 0 0112 6.4 5.2 5.2 0 0121.3 12c-1.8 4.3-9.3 9-9.3 9z');
@@ -5206,6 +5222,7 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
       const state = usePlayerState();
       const session = useSession();
       const likedIds = useLikedIds();
+      const miniHidden = useMiniBar();
       const track = state.track;
       const liked = track ? likedIds.has(track.id) : false;
       const duration = state.duration || (track ? track.duration / 1000 : 0);
@@ -5390,6 +5407,16 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
               onClick: onOpenHelp,
             },
             h(IconKeyboard, { size: 15 }),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dnm-icon-btn dnm-player-mini' + (miniHidden ? '' : ' on'),
+              title: miniHidden ? t('showMini') : t('hideMini'),
+              onClick: () => miniBarStore.toggle(),
+            },
+            h(IconMini, { size: 15 }),
           ),
           h(
             'button',
@@ -6362,10 +6389,6 @@ body:not([data-ds-dark-theme]) .dnm-kbd{background:#fff;border-color:rgba(15,17,
         if (state.status === 'idle') void sharedSession.refresh();
         return () => sharedPlayer.setPanelVisible(false);
       }, [state.status]);
-
-      useEffect(() => {
-        miniBarStore.reset();
-      }, []);
 
       useEffect(() => {
         if (state.loggedIn && state.profile) void likedStore.ensure(state.profile.userId);
